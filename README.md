@@ -1,4 +1,3 @@
-```markdown
 # Payment Service
 
 Microservice de gestion des paiements pour une application e-commerce.
@@ -107,4 +106,3 @@ src/main/java/com/ecommerce/paymentservice/
 └── dto/PaymentRequest.java / PaymentResponse.java
 ```
 
-```
