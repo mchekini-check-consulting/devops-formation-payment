@@ -2,7 +2,7 @@
 
 npx --no -- commitlint --edit "$1" || {
   echo ""
-  echo "💡 Tip: Instead of writing commits manually, use:"
+  echo " Tip: Instead of writing commits manually, use:"
   echo "   npx cz"
   echo "   It will guide you through the correct format."
   echo ""
