@@ -2,15 +2,18 @@
   "name": "mon-projet",
   "version": "1.0.0",
   "scripts": {
-    "commit": "git-cz"
+    "commit": "git-cz",
+    "prepare": "husky"
   },
   "devDependencies": {
     "commitizen": "^4.3.1",
-    "cz-customizable": "^7.5.4"
+    "cz-customizable": "^7.5.4",
+    "husky": "^9.1.7"
   },
   "config": {
     "commitizen": {
       "path": "cz-customizable"
     }
   }
+
 }
