@@ -23,7 +23,8 @@
     { name: 'models' },
     { name: 'middleware' },
     { name: 'docs' },
-    { name: 'config' }
+    { name: 'config' },
+    { name: 'git' }
   ],
   allowTicketNumber: false,
   isTicketNumberRequired: false,
