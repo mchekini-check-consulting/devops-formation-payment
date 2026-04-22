@@ -1,0 +1,163 @@
+# docker-compose.yaml — racine du projet
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # FRONTEND
+  # ══════════════════════════════════════════════════════════════════════════════
+  frontend:
+    build:
+      context: ./devops-formation-front
+      dockerfile: Dockerfile
+    container_name: frontend
+    ports:
+      - "3000:80"
+    environment:
+      CATALOG: 'http://localhost:4000' 
+      ORDERS: 'http://localhost:8000/api/orders/' 
+      PAYMENT: 'http://localhost:8082/api/payments'
+    depends_on:
+      - catalog
+      - orders
+      - payment
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # CATALOGUE  (Node.js)
+  # ══════════════════════════════════════════════════════════════════════════════
+  catalog:
+    build:
+      context: ./devops-formation-catalog
+      dockerfile: Dockerfile
+      target: builder
+    container_name: catalog-service
+    ports:
+      - "4000:3000"
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      DB_HOST: catalog-db
+      DB_PORT: 5432
+      DB_NAME: catalogue_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+    depends_on:
+      catalog-db:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  catalog-db:
+    image: postgres:17-alpine
+    container_name: catalog-db
+    environment:
+      POSTGRES_DB: catalogue_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"          # 5434 hôte → évite conflit avec les autres postgres
+    volumes:
+      - catalog_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # ORDERS  (Django)
+  # ══════════════════════════════════════════════════════════════════════════════
+  orders:
+      build:
+        context: ./devops-formation-order
+      container_name: orders-service
+      command: >
+        sh -c "python manage.py migrate &&
+              gunicorn config.wsgi:application --bind 0.0.0.0:8000"
+      ports:
+        - "8000:8000"
+      env_file:
+        - ./devops-formation-order/.env.prod
+      environment:
+        POSTGRES_HOST: orders-db    # ✅ "db" → "orders-db"
+      depends_on:
+        orders-db:
+          condition: service_healthy
+      networks:
+        - app-network
+      restart: unless-stopped
+
+  orders-db:
+    image: postgres:17-alpine
+    container_name: orders-db
+    environment:
+      POSTGRES_DB: orders_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5435:5432"          # 5435 hôte
+    volumes:
+      - orders_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
+  # ══════════════════════════════════════════════════════════════════════════════
+  # PAYMENT  (Spring Boot Native)
+  # ══════════════════════════════════════════════════════════════════════════════
+  payment:
+    build:
+      context: ./payment-service
+    container_name: payment-service
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://payment-db:5432/payment_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+    depends_on:
+      payment-db:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  payment-db:
+    image: postgres:17
+    container_name: payment-db
+    environment:
+      POSTGRES_DB: payment_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"          # 5433 hôte
+    volumes:
+      - payment_pgdata:/var/lib/postgresql/data   # ✅ chemin corrigé (pgdata → data)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d payment_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
+# ─────────────────────────────────────────────────────────────────────────────
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  catalog_pgdata:
+  orders_pgdata:
+  payment_pgdata:
