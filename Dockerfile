@@ -183,51 +183,9 @@ ENTRYPOINT ["java", "-jar", "app.jar"]
 
 
 
-# # ─── Stage 1 : Build JAR ──────────────────────────────────────────────────────
-# FROM eclipse-temurin:17-jdk AS builder
 
-# WORKDIR /app
-# COPY pom.xml .
-# COPY src ./src
 
-# RUN apt-get update && \
-#     apt-get install -y maven && \
-#     rm -rf /var/lib/apt/lists/*
 
-# RUN mvn package -DskipTests
 
-# # ─── Stage 2 : Runtime minimal avec jlink ─────────────────────────────────────
-# FROM eclipse-temurin:17-jdk AS jlink-builder
 
-# COPY --from=builder /app/target/payment-service-0.0.1-SNAPSHOT.jar /app.jar
 
-# RUN jar xf /app.jar && \
-#     jdeps \
-#         --ignore-missing-deps \
-#         --print-module-deps \
-#         --multi-release 17 \
-#         --recursive \
-#         --class-path 'BOOT-INF/lib/*' \
-#         /app.jar > /modules.txt && \
-#     jlink \
-#         --add-modules $(cat /modules.txt) \
-#         --strip-debug \
-#         --no-man-pages \
-#         --no-header-files \
-#         --compress=2 \
-#         --output /javaruntime
-
-# # ─── Stage 3 : Image finale Alpine ────────────────────────────────────────────
-# FROM alpine:3.19
-
-# RUN addgroup -S spring && adduser -S spring -G spring
-
-# ENV JAVA_HOME=/javaruntime
-# ENV PATH=$JAVA_HOME/bin:$PATH
-
-# COPY --from=jlink-builder /javaruntime $JAVA_HOME
-# COPY --from=builder /app/target/payment-service-0.0.1-SNAPSHOT.jar /app/app.jar
-
-# USER spring:spring
-# EXPOSE 8082
-# ENTRYPOINT ["java", "-XX:TieredStopAtLevel=1", "-jar", "/app/app.jar"]
