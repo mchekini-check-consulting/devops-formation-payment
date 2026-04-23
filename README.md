@@ -5,7 +5,7 @@ Microservice de gestion des paiements pour une application e-commerce.
 ## Stack technique
 
 - Java 17
-- Spring Boot 3.5.13
+- Spring Boot 3.4.4
 - Spring Data JPA
 - PostgreSQL
 - Maven
@@ -23,11 +23,19 @@ docker-compose up --build
 ### Sans Docker
 
 ```bash
-# Configurer PostgreSQL (port 5432)
+# Configurer PostgreSQL (port 5433)
 # Database: payment_db | User: postgres | Password: postgres
 
 # Lancer l'application
-mvn spring-boot:run
+# Avec Maven
+mvn spring-boot:run -Dspring-boot.run.profiles=local
+
+# Ou
+mvn spring-boot:run -Dspring.profiles.active=local
+
+# Avec le JAR
+java -jar -Dspring.profiles.active=local target/payment-service.jar
+
 ```
 
 ## API Endpoints
@@ -48,6 +56,12 @@ curl -X POST http://localhost:8082/api/payments \
     "userId": "user123",
     "amount": 99.99
   }'
+
+# pour creer toute une list de paiements on utilise :
+.\create_payments.bat 
+# ou 
+./create_payments.sh 
+
 ```
 
 **Réponse (201 Created) :**
@@ -91,7 +105,7 @@ spring.datasource.password=postgres
 
 | Variable | Défaut |
 |----------|--------|
-| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://postgres:5432/payment_db` |
+| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5434/payment_db` |
 | `SPRING_DATASOURCE_USERNAME` | `postgres` |
 | `SPRING_DATASOURCE_PASSWORD` | `postgres` |
 
