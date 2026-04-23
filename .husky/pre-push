@@ -2,4 +2,4 @@
 . "$(dirname -- "$0")/_/husky.sh"
 
 
-npx commitlint --from origin/main --to HEAD --verbose
+npx commitlint --from origin/chore/dockerglobal_commitlint --to HEAD --verbose
