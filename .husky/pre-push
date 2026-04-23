@@ -2,7 +2,7 @@
 . "$(dirname -- "$0")/_/husky.sh"
 
 
-npx commitlint --from "$(git rev-parse @{push} 2>/dev/null || git rev-parse HEAD)" --to HEAD --verbose || {
+npx commitlint --from origin/feat/version-finale --to HEAD --verbose || {
   echo ""
   echo " Tip: Instead of writing commits manually, use:"
   echo "   npx cz"
