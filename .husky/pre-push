@@ -12,9 +12,10 @@ do
     fi
     
     if [ "$remote_sha" = $z40 ]; then
-        # Nouvelle branche : vérifier uniquement les commits depuis la branche par défaut
-        # Remplacer 'main' par votre branche par défaut (master, develop, etc.)
-        range="main..$local_sha"
+        # Nouvelle branche : vérifier uniquement les commits depuis main
+        # Utiliser git merge-base pour trouver la base commune
+        base=$(git merge-base HEAD main 2>/dev/null || echo "main")
+        range="$base..$local_sha"
     else
         # Branche existante : uniquement les nouveaux commits
         range="$remote_sha..$local_sha"
@@ -22,8 +23,10 @@ do
     
     # Vérifier les commits avec commitlint
     if [ -n "$range" ]; then
-        npx commitlint --from "$range" --to "$local_sha"
+        echo "🔍 Vérification des commits: $range"
+        npx commitlint --from "$range"
         if [ $? -ne 0 ]; then
+            echo "❌ Les commits ne respectent pas les règles commitlint"
             exit 1
         fi
     fi
