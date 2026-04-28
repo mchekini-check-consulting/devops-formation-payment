@@ -1,34 +1,35 @@
-#!/usr/bin/env sh
-. "$(dirname -- "$0")/_/husky.sh"
+# NO shebang lines — husky v9+ injects the shell automatically
 
-# Récupérer les arguments du push
 z40=0000000000000000000000000000000000000000
 
 while read local_ref local_sha remote_ref remote_sha
 do
-    if [ "$local_sha" = $z40 ]; then
-        # Suppression, on ignore
+    # Deletion push — nothing to lint
+    if [ "$local_sha" = "$z40" ]; then
         continue
     fi
-    
-    if [ "$remote_sha" = $z40 ]; then
-        # Nouvelle branche : vérifier uniquement les commits depuis main
-        # Utiliser git merge-base pour trouver la base commune
-        base=$(git merge-base HEAD main 2>/dev/null || echo "main")
-        range="$base..$local_sha"
-    else
-        # Branche existante : uniquement les nouveaux commits
-        range="$remote_sha..$local_sha"
-    fi
-    
-    # Vérifier les commits avec commitlint
-    if [ -n "$range" ]; then
-        echo "🔍 Vérification des commits: $range"
-        npx commitlint --from "$range"
-        if [ $? -ne 0 ]; then
-            echo "❌ Les commits ne respectent pas les règles commitlint"
-            exit 1
+
+    if [ "$remote_sha" = "$z40" ]; then
+        # New branch: lint commits not yet on main
+        base=$(git merge-base HEAD main 2>/dev/null)
+        if [ -z "$base" ]; then
+            echo "⚠️  Impossible de trouver la base commune avec main, skip lint"
+            continue
         fi
+        from="$base"
+        to="$local_sha"
+    else
+        # Existing branch: lint only new commits
+        from="$remote_sha"
+        to="$local_sha"
+    fi
+
+    echo "🔍 Vérification des commits: $from..$to"
+    npx commitlint --from "$from" --to "$to"
+
+    if [ $? -ne 0 ]; then
+        echo "❌ Les commits ne respectent pas les règles commitlint"
+        exit 1
     fi
 done
 
