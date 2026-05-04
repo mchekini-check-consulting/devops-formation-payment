@@ -17,7 +17,10 @@ FROM eclipse-temurin:17-jre-alpine
 RUN addgroup -S spring && adduser -S spring -G spring
 
 WORKDIR /app
+ARG AGENT
+COPY ${AGENT} /app/agent.jar
 COPY --from=builder /app/target/payment-service-0.0.1-SNAPSHOT.jar app.jar
+ENV JAVA_TOOL_OPTIONS="-javaagent:/app/agent.jar"
 
 USER spring:spring
 EXPOSE 8082
