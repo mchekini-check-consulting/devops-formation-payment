@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!-- Point 4 : lecture des propriétés Spring pour service et env -->
+    <springProperty scope="context" name="SERVICE_NAME"
+                    source="spring.application.name"
+                    defaultValue="payment-service"/>
+    <springProperty scope="context" name="APP_ENV"
+                    source="spring.profiles.active"
+                    defaultValue="prod"/>
+
+    <appender name="STDOUT_JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+            <providers>
+
+                <!-- Timestamp ISO 8601 UTC -->
+                <timestamp>
+                    <fieldName>timestamp</fieldName>
+                    <timeZone>UTC</timeZone>
+                </timestamp>
+
+                <!-- Niveau de log -->
+                <logLevel>
+                    <fieldName>level</fieldName>
+                </logLevel>
+
+                <!-- Point 4 : champs statiques service + env depuis Spring properties -->
+                <pattern>
+                    <pattern>
+                        {
+                            "service": "${SERVICE_NAME:-payment-service}",
+                            "env":     "${APP_ENV:-prod}"
+                        }
+                    </pattern>
+                </pattern>
+
+                <!-- Point 3 : renommage snake_case OTel → camelCase attendu par l'US -->
+                <!-- L'agent OTel injecte trace_id / span_id dans le MDC              -->
+                <pattern>
+                    <pattern>
+                        {
+                            "traceId": "%mdc{trace_id}",
+                            "spanId":  "%mdc{span_id}"
+                        }
+                    </pattern>
+                </pattern>
+
+                <!-- Message applicatif -->
+                <message>
+                    <fieldName>message</fieldName>
+                </message>
+
+                <!-- Point 2 : UN seul bloc mdc pour tous les champs dynamiques        -->
+                <!-- (userId, correlationId, etc. posés par le code applicatif)        -->
+                <!-- On exclut les clés OTel déjà renommées ci-dessus                  -->
+                <mdc>
+                    <excludeMdcKeyName>trace_id</excludeMdcKeyName>
+                    <excludeMdcKeyName>span_id</excludeMdcKeyName>
+                    <excludeMdcKeyName>trace_flags</excludeMdcKeyName>
+                </mdc>
+
+                <!-- Détails exception -->
+                <stackTrace>
+                    <fieldName>exception.stackTrace</fieldName>
+                    <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+                        <maxDepthPerThrowable>30</maxDepthPerThrowable>
+                        <maxLength>2048</maxLength>
+                        <shortenedClassNameLength>20</shortenedClassNameLength>
+                        <rootCauseFirst>true</rootCauseFirst>
+                    </throwableConverter>
+                </stackTrace>
+
+                <throwableClassName>
+                    <fieldName>exception.type</fieldName>
+                </throwableClassName>
+
+                <throwableMessage>
+                    <fieldName>exception.message</fieldName>
+                </throwableMessage>
+
+            </providers>
+        </encoder>
+    </appender>
+
+
+
+    <appender name="OTEL" class="io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender">
+        <captureMdcAttributes>*</captureMdcAttributes>
+        <captureExperimentalAttributes>true</captureExperimentalAttributes>
+    </appender>
+
+
+    <root level="${LOG_LEVEL:-INFO}">
+        <appender-ref ref="STDOUT_JSON"/>
+        <appender-ref ref="OTEL" />
+    </root>
+
+    <logger name="io.netty" level="WARN"/>
+    <logger name="reactor"  level="WARN"/>
+    <logger name="com.zaxxer.hikari" level="WARN"/>
+
+</configuration>
