@@ -1,0 +1,6 @@
+#!/bin/sh
+npx commitlint --from origin/main --to HEAD --verbose || {
+  echo " Les commits ne respectent pas les règles commitlint"
+  echo " Utilisez 'npx cz' pour écrire vos messages de commit"
+  exit 1
+}
