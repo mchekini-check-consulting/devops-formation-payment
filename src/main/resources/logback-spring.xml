@@ -39,8 +39,8 @@
                 <pattern>
                     <pattern>
                         {
-                            "traceId": "%mdc{trace_id}",
-                            "spanId":  "%mdc{span_id}"
+                            "traceId": "%mdc{traceId}",
+                            "spanId":  "%mdc{spanId}"
                         }
                     </pattern>
                 </pattern>
@@ -50,13 +50,11 @@
                     <fieldName>message</fieldName>
                 </message>
 
-                <!-- Point 2 : UN seul bloc mdc pour tous les champs dynamiques        -->
-                <!-- (userId, correlationId, etc. posés par le code applicatif)        -->
-                <!-- On exclut les clés OTel déjà renommées ci-dessus                  -->
+                <!-- Champs MDC dynamiques (correlationId, userId, etc.)             -->
+                <!-- On exclut traceId/spanId déjà capturés dans le bloc pattern     -->
                 <mdc>
-                    <excludeMdcKeyName>trace_id</excludeMdcKeyName>
-                    <excludeMdcKeyName>span_id</excludeMdcKeyName>
-                    <excludeMdcKeyName>trace_flags</excludeMdcKeyName>
+                    <excludeMdcKeyName>traceId</excludeMdcKeyName>
+                    <excludeMdcKeyName>spanId</excludeMdcKeyName>
                 </mdc>
 
                 <!-- Détails exception -->

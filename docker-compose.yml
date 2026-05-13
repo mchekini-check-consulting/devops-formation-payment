@@ -21,16 +21,24 @@ services:
       - payment-network
 
   payment-service:
-    build: .
+    build:
+      context: .
     container_name: payment-service
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: dev
-      # SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/payment_db
-      # SPRING_DATASOURCE_USERNAME: postgres
-      # SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/payment_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      LOG_LEVEL: WARN
+      # Connection string Azure Monitor (Azure Portal → Application Insights → Vue d'ensemble)
+      APPLICATIONINSIGHTS_CONNECTION_STRING: "InstrumentationKey=e0c8cd17-481d-4731-9cf3-f88f06152d53;IngestionEndpoint=https://eastus-8.in.applicationinsights.azure.com/;LiveEndpoint=https://eastus.livediagnostics.monitor.azure.com/;ApplicationId=754d7d60-7e60-4a96-a291-9da7e6d1d1d6"
+
+
+
+
     ports:
       - "8082:8082"
     networks:

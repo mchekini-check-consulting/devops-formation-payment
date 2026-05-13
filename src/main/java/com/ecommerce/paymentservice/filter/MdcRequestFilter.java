@@ -1,4 +1,4 @@
-package com.ecommerce.paymentservice.filter;   // adapte le package à ton projet
+package com.ecommerce.paymentservice.filter;
 
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,7 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE)   // s'exécute avant tous les autres filtres
+@Order(Ordered.HIGHEST_PRECEDENCE + 1)
 public class MdcRequestFilter implements Filter {
 
     @Override
@@ -21,13 +21,10 @@ public class MdcRequestFilter implements Filter {
         try {
             HttpServletRequest http = (HttpServletRequest) req;
 
-            // Récupère l'ID de corrélation passé par le service appelant (order → payment)
-            // ou en génère un nouveau si la requête vient de l'extérieur
             String correlationId = Optional
                 .ofNullable(http.getHeader("X-Correlation-Id"))
                 .orElse(UUID.randomUUID().toString());
 
-            // Récupère le userId passé dans le header (posé par order-service ou le client)
             String userId = Optional
                 .ofNullable(http.getHeader("X-User-Id"))
                 .orElse("anonymous");
@@ -35,10 +32,10 @@ public class MdcRequestFilter implements Filter {
             MDC.put("correlationId", correlationId);
             MDC.put("userId", userId);
 
-            chain.doFilter(req, res);   // continue vers le controller
+            chain.doFilter(req, res);
 
         } finally {
-            MDC.clear();   // OBLIGATOIRE : nettoie le MDC pour éviter les fuites
-        }                  // entre requêtes sur le même thread (thread pool Tomcat)
+            MDC.clear();
+        }
     }
 }

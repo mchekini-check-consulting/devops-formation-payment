@@ -33,9 +33,10 @@ public class CorsConfig {
     @Bean
     public CorsFilter corsFilter() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(allowedOrigins);
+        config.setAllowedOriginPatterns(allowedOrigins);
         config.setAllowedMethods(allowedMethods);
         config.setAllowedHeaders(allowedHeaders);
+        config.setExposedHeaders(allowedHeaders);
         config.setAllowCredentials(allowCredentials);
         config.setMaxAge(maxAge);
 
