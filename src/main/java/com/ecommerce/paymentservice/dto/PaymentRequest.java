@@ -10,7 +10,6 @@ public class PaymentRequest {
     @NotNull(message = "orderId is required")
     private UUID orderId;
     
-    @NotNull(message = "userId is required")
     private String userId;
     
     @NotNull(message = "amount is required")
