@@ -28,12 +28,15 @@ public class PaymentController {
     private final PaymentService paymentService;
     
     @PostMapping
-    public ResponseEntity<PaymentResponse> createPayment(@Valid @RequestBody PaymentRequest request) {
-       
-        MDC.put("userId", request.getUserId());
+    public ResponseEntity<PaymentResponse> createPayment(
+            @RequestHeader("X-User-ID") String userId,
+            @Valid @RequestBody PaymentRequest request) {
+
+        request.setUserId(userId);
+        MDC.put("userId", userId);
         // Log structuré automatiquement au format JSON
         logger.info("Creating payment request");
-        
+
         PaymentResponse response = paymentService.processPayment(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
