@@ -74,12 +74,14 @@ public class PaymentService {
     
     }
     
+    @Transactional(readOnly = true)
     public List<PaymentResponse> getAllPayments() {
         return paymentRepository.findAll().stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
     }
     
+    @Transactional(readOnly = true)
     public PaymentResponse getPaymentById(UUID id) {
         Payment payment = paymentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Payment not found with id: " + id));
