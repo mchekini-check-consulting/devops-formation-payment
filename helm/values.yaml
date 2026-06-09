@@ -72,3 +72,12 @@ hpa:
 
 vpa:
   updateMode: "Off"
+netpolicies:
+  ingresssources: ingress-nginx
+  ingressdestports: 8082
+  ingressprotocol: TCP 
+  egresssources: pgcat
+  egressdestports: 5432
+  egressprotocol: TCP
+  httpsinternetports: 443
+  httpsprotocol: TCP
