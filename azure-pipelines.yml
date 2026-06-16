@@ -10,9 +10,50 @@ pool:
   vmImage: ubuntu-latest
 
 stages:
-- stage: Build
+
+# ─────────────────────────────────────────────
+# STAGE 1 : Tests Unitaires
+# ─────────────────────────────────────────────
+- stage: UnitTests
+  displayName: 'Unit Tests'
   jobs:
-  - job: BuildJob
+  - job: UnitTestsJob
+    displayName: 'Run Unit Tests'
+    steps:
+    - task: Maven@3
+      displayName: 'Maven - surefire (*Test.java)'
+      inputs:
+        mavenPomFile: 'pom.xml'
+        goals: 'test'
+        publishJUnitResults: true
+        testResultsFiles: '**/surefire-reports/TEST-*.xml'
+        testRunTitle: 'Unit Tests'
+        javaHomeOption: 'JDKVersion'
+        jdkVersionOption: '1.17'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - surefire-reports'
+      condition: always()
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/target/surefire-reports'
+        ArtifactName: 'unit-test-reports'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - jacoco unit exec'
+      condition: always()
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/target/jacoco-all.exec'
+        ArtifactName: 'jacoco-unit-exec'
+
+# ─────────────────────────────────────────────
+# STAGE 2 : Tests Intégration
+# ─────────────────────────────────────────────
+- stage: IntegrationTests
+  displayName: 'Integration Tests'
+  dependsOn: UnitTests
+  jobs:
+  - job: IntegrationTestsJob
+    displayName: 'Run Integration Tests'
     services:
       postgres:
         image: postgres:15
@@ -24,13 +65,13 @@ stages:
         - 5432:5432
     steps:
     - task: Maven@3
+      displayName: 'Maven - failsafe (*IT.java)'
       inputs:
         mavenPomFile: 'pom.xml'
-        goals: 'verify'
+        goals: 'verify -DskipTests'
         publishJUnitResults: true
-        testResultsFiles: |
-          **/surefire-reports/TEST-*.xml
-          **/failsafe-reports/TEST-*.xml
+        testResultsFiles: '**/failsafe-reports/TEST-*.xml'
+        testRunTitle: 'Integration Tests'
         javaHomeOption: 'JDKVersion'
         jdkVersionOption: '1.17'
       env:
@@ -39,27 +80,102 @@ stages:
         SPRING_DATASOURCE_PASSWORD: postgres
 
     - task: PublishCodeCoverageResults@2
+      displayName: 'Publish Coverage - JaCoCo'
+      condition: always()
       inputs:
         summaryFileLocation: '$(System.DefaultWorkingDirectory)/target/site/jacoco/jacoco.xml'
         pathToSources: '$(System.DefaultWorkingDirectory)/src/main/java'
-      condition: always()
 
     - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - failsafe-reports'
+      condition: always()
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/target/failsafe-reports'
+        ArtifactName: 'integration-test-reports'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - jacoco HTML report'
+      condition: always()
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/target/site/jacoco'
+        ArtifactName: 'jacoco-coverage-report'
+
+# ─────────────────────────────────────────────
+# STAGE 3 : SonarQube
+# ─────────────────────────────────────────────
+- stage: Sonar
+  displayName: 'SonarQube Analysis'
+  dependsOn: IntegrationTests
+  jobs:
+  - job: SonarJob
+    displayName: 'Sonar Scan'
+    steps:
+    - task: DownloadBuildArtifacts@1
+      displayName: 'Download jacoco report'
+      inputs:
+        artifactName: 'jacoco-coverage-report'
+        downloadPath: '$(Pipeline.Workspace)/jacoco'
+
+    - task: Maven@3
+      displayName: 'Maven - compile + sonar:sonar'
+      inputs:
+        mavenPomFile: 'pom.xml'
+        goals: 'compile sonar:sonar'
+        options: >-
+          -DskipTests
+          -Dsonar.projectKey=devops-formation-payment
+          -Dsonar.projectName=devops-formation-payment
+          -Dsonar.java.binaries=target/classes
+          -Dsonar.coverage.jacoco.xmlReportPaths=$(Pipeline.Workspace)/jacoco/jacoco-coverage-report/jacoco.xml
+        javaHomeOption: 'JDKVersion'
+        jdkVersionOption: '1.17'
+      env:
+        SONAR_TOKEN: $(SONAR_TOKEN)
+        SONAR_HOST_URL: $(SONAR_HOST_URL)
+
+# ─────────────────────────────────────────────
+# STAGE 4 : Build
+# ─────────────────────────────────────────────
+- stage: Build
+  displayName: 'Build'
+  dependsOn: Sonar
+  jobs:
+  - job: BuildJob
+    displayName: 'Maven Package'
+    steps:
+    - task: Maven@3
+      displayName: 'Maven - package -DskipTests'
+      inputs:
+        mavenPomFile: 'pom.xml'
+        goals: 'package -DskipTests'
+        javaHomeOption: 'JDKVersion'
+        jdkVersionOption: '1.17'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - JAR'
       inputs:
         PathtoPublish: '$(System.DefaultWorkingDirectory)/target'
         ArtifactName: 'jar'
 
+# ─────────────────────────────────────────────
+# STAGE 5 : Push Docker → ACR
+# ─────────────────────────────────────────────
 - stage: Push
+  displayName: 'Push Docker Image'
   dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.Reason'], 'IndividualCI'))
   jobs:
   - job: PushJob
+    displayName: 'Docker Build & Push'
     steps:
     - task: DownloadBuildArtifacts@1
+      displayName: 'Download JAR artifact'
       inputs:
         artifactName: 'jar'
         downloadPath: '$(System.DefaultWorkingDirectory)/target'
 
     - task: AzureCLI@2
+      displayName: 'Docker build + push ACR'
       inputs:
         azureSubscription: 'sc-formation-devops-acr'
         scriptType: bash
