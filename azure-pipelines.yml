@@ -123,15 +123,11 @@ stages:
         goals: 'compile sonar:sonar'
         options: >-
           -DskipTests
-          -Dsonar.projectKey=devops-formation-payment
-          -Dsonar.projectName=devops-formation-payment
-          -Dsonar.java.binaries=target/classes
+          -Dsonar.host.url=$(SONAR_HOST_URL)
+          -Dsonar.token=$(SONAR_TOKEN)
           -Dsonar.coverage.jacoco.xmlReportPaths=$(Pipeline.Workspace)/jacoco/jacoco-coverage-report/jacoco.xml
         javaHomeOption: 'JDKVersion'
         jdkVersionOption: '1.17'
-      env:
-        SONAR_TOKEN: $(SONAR_TOKEN)
-        SONAR_HOST_URL: $(SONAR_HOST_URL)
 
 # ─────────────────────────────────────────────
 # STAGE 4 : Build
