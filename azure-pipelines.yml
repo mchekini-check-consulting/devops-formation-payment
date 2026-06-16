@@ -68,7 +68,7 @@ stages:
       displayName: 'Maven - failsafe (*IT.java)'
       inputs:
         mavenPomFile: 'pom.xml'
-        goals: 'verify -DskipTests'
+        goals: 'verify'
         publishJUnitResults: true
         testResultsFiles: '**/failsafe-reports/TEST-*.xml'
         testRunTitle: 'Integration Tests'
