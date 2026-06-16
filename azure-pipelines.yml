@@ -13,6 +13,15 @@ stages:
 - stage: Build
   jobs:
   - job: BuildJob
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: payment_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+        - 5432:5432
     steps:
     - task: Maven@3
       inputs:
@@ -22,6 +31,10 @@ stages:
         testResultsFiles: '**/surefire-reports/TEST-*.xml'
         javaHomeOption: 'JDKVersion'
         jdkVersionOption: '1.17'
+      env:
+        SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/payment_db
+        SPRING_DATASOURCE_USERNAME: postgres
+        SPRING_DATASOURCE_PASSWORD: postgres
 
     - task: PublishBuildArtifacts@1
       inputs:
