@@ -1,22 +1,49 @@
-# Maven
-# Build your Java project and run tests with Apache Maven.
-# Add steps that analyze code, save build artifacts, deploy, and more:
-# https://docs.microsoft.com/azure/devops/pipelines/languages/java
-
 trigger:
 - main
+
+pr:
+  branches:
+    include:
+    - '*'
 
 pool:
   vmImage: ubuntu-latest
 
-steps:
-- task: Maven@3
-  inputs:
-    mavenPomFile: 'pom.xml'
-    mavenOptions: '-Xmx3072m'
-    javaHomeOption: 'JDKVersion'
-    jdkVersionOption: '1.11'
-    jdkArchitectureOption: 'x64'
-    publishJUnitResults: true
-    testResultsFiles: '**/surefire-reports/TEST-*.xml'
-    goals: 'package'
+stages:
+- stage: Build
+  jobs:
+  - job: BuildJob
+    steps:
+    - task: Maven@3
+      inputs:
+        mavenPomFile: 'pom.xml'
+        goals: 'package'
+        publishJUnitResults: true
+        testResultsFiles: '**/surefire-reports/TEST-*.xml'
+        javaHomeOption: 'JDKVersion'
+        jdkVersionOption: '1.11'
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/target'
+        ArtifactName: 'jar'
+
+- stage: Push
+  dependsOn: Build
+  jobs:
+  - job: PushJob
+    steps:
+    - task: DownloadBuildArtifacts@1
+      inputs:
+        artifactName: 'jar'
+        downloadPath: '$(System.DefaultWorkingDirectory)/target'
+
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: 'sc-formation-devops-acr'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          az acr login --name crformation
+          docker build -t crformation.azurecr.io/devops-formation-payment:$(Build.BuildId) .
+          docker push crformation.azurecr.io/devops-formation-payment:$(Build.BuildId)
