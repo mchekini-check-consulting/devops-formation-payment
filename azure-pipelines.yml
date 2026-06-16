@@ -26,15 +26,23 @@ stages:
     - task: Maven@3
       inputs:
         mavenPomFile: 'pom.xml'
-        goals: 'package'
+        goals: 'verify'
         publishJUnitResults: true
-        testResultsFiles: '**/surefire-reports/TEST-*.xml'
+        testResultsFiles: |
+          **/surefire-reports/TEST-*.xml
+          **/failsafe-reports/TEST-*.xml
         javaHomeOption: 'JDKVersion'
         jdkVersionOption: '1.17'
       env:
         SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/payment_db
         SPRING_DATASOURCE_USERNAME: postgres
         SPRING_DATASOURCE_PASSWORD: postgres
+
+    - task: PublishCodeCoverageResults@2
+      inputs:
+        summaryFileLocation: '$(System.DefaultWorkingDirectory)/target/site/jacoco/jacoco.xml'
+        pathToSources: '$(System.DefaultWorkingDirectory)/src/main/java'
+      condition: always()
 
     - task: PublishBuildArtifacts@1
       inputs:
