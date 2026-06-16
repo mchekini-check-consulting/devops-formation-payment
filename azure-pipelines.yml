@@ -9,6 +9,9 @@ pr:
 pool:
   vmImage: ubuntu-latest
 
+variables:
+- group: variable
+
 stages:
 
 # ─────────────────────────────────────────────
