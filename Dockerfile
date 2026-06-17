@@ -14,6 +14,8 @@ RUN mvn package -DskipTests
 # ─── Stage 2 : Image finale minimale ─────────────────────────────────────────
 FROM eclipse-temurin:17-jre-alpine
 
+RUN apk upgrade --no-cache
+
 RUN addgroup -S spring && adduser -S spring -G spring
 
 WORKDIR /app
