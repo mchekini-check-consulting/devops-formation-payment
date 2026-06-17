@@ -157,15 +157,16 @@ stages:
         ArtifactName: 'jar'
 
 # ─────────────────────────────────────────────
-# STAGE 5 : Push Docker → ACR
+# STAGE 5 : Docker Build
 # ─────────────────────────────────────────────
-- stage: Push
-  displayName: 'Push Docker Image'
+- stage: DockerBuild
+  displayName: 'Docker Build'
   dependsOn: Build
-  condition: and(succeeded(), eq(variables['Build.Reason'], 'IndividualCI'))
+  variables:
+    IMAGE: crformation.azurecr.io/devops-formation-payment:$(Build.BuildId)
   jobs:
-  - job: PushJob
-    displayName: 'Docker Build & Push'
+  - job: DockerBuildJob
+    displayName: 'Build & Save Image'
     steps:
     - task: DownloadBuildArtifacts@1
       displayName: 'Download JAR artifact'
@@ -174,12 +175,98 @@ stages:
         downloadPath: '$(System.DefaultWorkingDirectory)/target'
 
     - task: AzureCLI@2
-      displayName: 'Docker build + push ACR'
+      displayName: 'Docker Build → save tar'
       inputs:
         azureSubscription: 'sc-formation-devops-acr'
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
           az acr login --name crformation
-          docker build -t crformation.azurecr.io/devops-formation-payment:$(Build.BuildId) .
-          docker push crformation.azurecr.io/devops-formation-payment:$(Build.BuildId)
+          docker build -t $(IMAGE) .
+          docker save $(IMAGE) -o $(Build.ArtifactStagingDirectory)/image.tar
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - image.tar'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)/image.tar'
+        ArtifactName: 'docker-image'
+
+# ─────────────────────────────────────────────
+# STAGE 6 : Trivy Security Scan
+# ─────────────────────────────────────────────
+- stage: Trivy
+  displayName: 'Trivy Security Scan'
+  dependsOn: DockerBuild
+  variables:
+    IMAGE: crformation.azurecr.io/devops-formation-payment:$(Build.BuildId)
+  jobs:
+  - job: TrivyJob
+    displayName: 'Trivy Scan'
+    steps:
+    - task: DownloadBuildArtifacts@1
+      displayName: 'Download image.tar'
+      inputs:
+        artifactName: 'docker-image'
+        downloadPath: '$(Build.ArtifactStagingDirectory)'
+
+    - script: docker load -i $(Build.ArtifactStagingDirectory)/docker-image/image.tar
+      displayName: 'Docker Load Image'
+
+    - script: |
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+          | sh -s -- -b /usr/local/bin
+        trivy image \
+          --exit-code 1 \
+          --severity HIGH,CRITICAL \
+          --no-progress \
+          --format table \
+          $(IMAGE)
+      displayName: 'Trivy - Scan (fail on HIGH/CRITICAL)'
+
+    - script: |
+        trivy image \
+          --exit-code 0 \
+          --severity HIGH,CRITICAL \
+          --no-progress \
+          --format json \
+          --output $(Build.ArtifactStagingDirectory)/trivy-report.json \
+          $(IMAGE)
+      displayName: 'Trivy - Export JSON Report'
+      condition: always()
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - trivy-report.json'
+      condition: always()
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)/trivy-report.json'
+        ArtifactName: 'trivy-report'
+
+# ─────────────────────────────────────────────
+# STAGE 7 : Push → ACR
+# ─────────────────────────────────────────────
+- stage: Push
+  displayName: 'Push to ACR'
+  dependsOn: Trivy
+  #condition: and(succeeded(), eq(variables['Build.Reason'], 'IndividualCI'))
+  variables:
+    IMAGE: crformation.azurecr.io/devops-formation-payment:$(Build.BuildId)
+  jobs:
+  - job: PushJob
+    displayName: 'Push Docker Image'
+    steps:
+    - task: DownloadBuildArtifacts@1
+      displayName: 'Download image.tar'
+      inputs:
+        artifactName: 'docker-image'
+        downloadPath: '$(Build.ArtifactStagingDirectory)'
+
+    - task: AzureCLI@2
+      displayName: 'Docker Load & Push → ACR'
+      inputs:
+        azureSubscription: 'sc-formation-devops-acr'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          docker load -i $(Build.ArtifactStagingDirectory)/docker-image/image.tar
+          az acr login --name crformation
+          docker push $(IMAGE)
