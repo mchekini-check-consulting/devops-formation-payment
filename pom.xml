@@ -163,12 +163,22 @@
                         <param>com.ecommerce.paymentservice.model.*</param>
                         <param>com.ecommerce.paymentservice.config.OpenAPIConfig</param>
                     </excludedClasses>
+                    <!-- @WebMvcTest lance un contexte Spring dans le JVM forké → crash PIT -->
+                    <excludedTests>
+                        <excludedTest>com.ecommerce.paymentservice.controller.PaymentControllerTest</excludedTest>
+                    </excludedTests>
                     <mutationThreshold>70</mutationThreshold>
                     <outputFormats>
                         <outputFormat>XML</outputFormat>
                         <outputFormat>HTML</outputFormat>
                     </outputFormats>
                     <timestampedReports>false</timestampedReports>
+                    <useClasspathJar>true</useClasspathJar>
+                    <jvmArgs>
+                        <value>--add-opens=java.base/java.lang=ALL-UNNAMED</value>
+                        <value>--add-opens=java.base/java.util=ALL-UNNAMED</value>
+                        <value>-Xmx512m</value>
+                    </jvmArgs>
                     <avoidCallsTo>
                         <avoidCallsTo>org.slf4j</avoidCallsTo>
                         <avoidCallsTo>org.apache.commons.logging</avoidCallsTo>
