@@ -140,6 +140,43 @@
             </plugin>
 
             <plugin>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-maven</artifactId>
+                <version>1.17.3</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.pitest</groupId>
+                        <artifactId>pitest-junit5-plugin</artifactId>
+                        <version>1.2.1</version>
+                    </dependency>
+                </dependencies>
+                <configuration>
+                    <targetClasses>
+                        <param>com.ecommerce.paymentservice.*</param>
+                    </targetClasses>
+                    <targetTests>
+                        <param>com.ecommerce.paymentservice.*Test</param>
+                    </targetTests>
+                    <excludedClasses>
+                        <param>com.ecommerce.paymentservice.PaymentServiceApplication</param>
+                        <param>com.ecommerce.paymentservice.dto.*</param>
+                        <param>com.ecommerce.paymentservice.model.*</param>
+                        <param>com.ecommerce.paymentservice.config.OpenAPIConfig</param>
+                    </excludedClasses>
+                    <mutationThreshold>70</mutationThreshold>
+                    <outputFormats>
+                        <outputFormat>XML</outputFormat>
+                        <outputFormat>HTML</outputFormat>
+                    </outputFormats>
+                    <timestampedReports>false</timestampedReports>
+                    <avoidCallsTo>
+                        <avoidCallsTo>org.slf4j</avoidCallsTo>
+                        <avoidCallsTo>org.apache.commons.logging</avoidCallsTo>
+                    </avoidCallsTo>
+                </configuration>
+            </plugin>
+
+            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>

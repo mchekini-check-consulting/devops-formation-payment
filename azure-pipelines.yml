@@ -49,11 +49,36 @@ stages:
         ArtifactName: 'jacoco-unit-exec'
 
 # ─────────────────────────────────────────────
-# STAGE 2 : Tests Intégration
+# STAGE 2 : Mutation Tests (PIT)
+# ─────────────────────────────────────────────
+- stage: MutationTests
+  displayName: 'Mutation Tests (PIT)'
+  dependsOn: UnitTests
+  jobs:
+  - job: MutationJob
+    displayName: 'PIT Mutation Coverage'
+    steps:
+    - task: Maven@3
+      displayName: 'Maven - pitest mutationCoverage (≥70%)'
+      inputs:
+        mavenPomFile: 'pom.xml'
+        goals: 'org.pitest:pitest-maven:mutationCoverage'
+        javaHomeOption: 'JDKVersion'
+        jdkVersionOption: '1.17'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - PIT report'
+      condition: always()
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/target/pit-reports'
+        ArtifactName: 'pit-mutation-report'
+
+# ─────────────────────────────────────────────
+# STAGE 3 : Tests Intégration
 # ─────────────────────────────────────────────
 - stage: IntegrationTests
   displayName: 'Integration Tests'
-  dependsOn: UnitTests
+  dependsOn: MutationTests
   jobs:
   - job: IntegrationTestsJob
     displayName: 'Run Integration Tests'
