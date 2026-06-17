@@ -152,10 +152,10 @@
                 </dependencies>
                 <configuration>
                     <targetClasses>
-                        <param>com.ecommerce.paymentservice.*</param>
+                        <param>com.ecommerce.paymentservice*</param>
                     </targetClasses>
                     <targetTests>
-                        <param>com.ecommerce.paymentservice.*Test</param>
+                        <param>com.ecommerce.paymentservice*Test</param>
                     </targetTests>
                     <excludedClasses>
                         <param>com.ecommerce.paymentservice.PaymentServiceApplication</param>

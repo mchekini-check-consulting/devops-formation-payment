@@ -62,7 +62,7 @@ stages:
       displayName: 'Maven - pitest mutationCoverage (≥70%)'
       inputs:
         mavenPomFile: 'pom.xml'
-        goals: 'org.pitest:pitest-maven:mutationCoverage'
+        goals: 'test-compile org.pitest:pitest-maven:mutationCoverage'
         javaHomeOption: 'JDKVersion'
         jdkVersionOption: '1.17'
 
