@@ -63,6 +63,7 @@ stages:
       inputs:
         mavenPomFile: 'pom.xml'
         goals: 'test-compile org.pitest:pitest-maven:mutationCoverage'
+        options: '-Djacoco.skip=true'
         javaHomeOption: 'JDKVersion'
         jdkVersionOption: '1.17'
 
