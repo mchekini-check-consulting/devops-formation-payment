@@ -36,7 +36,7 @@ stages:
 
         chmod +x gitleaks
 
-        ./gitleaks detect --source . --verbose --exit-code 1
+        ./gitleaks detect --source . --config .gitleaks.toml --verbose --exit-code 1
       displayName: 'Run Gitleaks (fixed install)'
 
 # ─────────────────────────────────────────────
