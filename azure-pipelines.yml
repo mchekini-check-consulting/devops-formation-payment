@@ -15,10 +15,62 @@ variables:
 stages:
 
 # ─────────────────────────────────────────────
+# STAGE 0 : Gitleaks – Secret Scanning
+# ─────────────────────────────────────────────
+- stage: Gitleaks
+  displayName: 'Gitleaks – Secret Scanning'
+  jobs:
+  - job: GitleaksJob
+    steps:
+    - checkout: self
+      fetchDepth: 0
+
+    - script: |
+        set -e
+
+        GITLEAKS_VERSION="8.18.0"
+
+        wget -q https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz
+
+        tar -xzf gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz
+
+        chmod +x gitleaks
+
+        ./gitleaks detect --source . --verbose --exit-code 1
+      displayName: 'Run Gitleaks (fixed install)'
+
+# ─────────────────────────────────────────────
+# STAGE : Lint (Checkstyle)
+# ─────────────────────────────────────────────
+- stage: Lint
+  displayName: 'Lint (Checkstyle)'
+  dependsOn: Gitleaks
+  jobs:
+  - job: LintJob
+    displayName: 'Checkstyle Analysis'
+    steps:
+    - task: Maven@3
+      displayName: 'Maven - checkstyle:check'
+      inputs:
+        mavenPomFile: 'pom.xml'
+        goals: 'checkstyle:check'
+        options: '-DskipTests'
+        javaHomeOption: 'JDKVersion'
+        jdkVersionOption: '1.17'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - checkstyle-report'
+      condition: always()
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/target/checkstyle-result.xml'
+        ArtifactName: 'checkstyle-report'
+
+# ─────────────────────────────────────────────
 # STAGE 1 : Tests Unitaires
 # ─────────────────────────────────────────────
 - stage: UnitTests
   displayName: 'Unit Tests'
+  dependsOn: Lint
   jobs:
   - job: UnitTestsJob
     displayName: 'Run Unit Tests'
