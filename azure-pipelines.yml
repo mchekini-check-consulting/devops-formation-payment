@@ -84,7 +84,7 @@ stages:
       displayName: 'Artifact - dependency-check-report'
       condition: always()
       inputs:
-        PathtoPublish: '$(System.DefaultWorkingDirectory)/target/dependency-check-report.html'
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/target'
         ArtifactName: 'owasp-dependency-check-report'
 
 # ─────────────────────────────────────────────
