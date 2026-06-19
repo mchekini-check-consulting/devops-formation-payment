@@ -348,3 +348,26 @@ stages:
           docker load -i $(Build.ArtifactStagingDirectory)/docker-image/image.tar
           az acr login --name crformation
           docker push $(IMAGE)
+
+# ─────────────────────────────────────────────
+# STAGE 8 : Helm Push → ACR
+# ─────────────────────────────────────────────
+- stage: HelmPush
+  displayName: 'Push Helm Chart'
+  dependsOn: Push
+  jobs:
+  - job: HelmPushJob
+    displayName: 'Package & Push Helm Chart'
+    steps:
+    - checkout: self
+
+    - task: AzureCLI@2
+      displayName: 'Helm Package & Push → ACR'
+      inputs:
+        azureSubscription: 'sc-formation-devops-acr'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          az acr login --name crformation
+          helm package ./helm/payment
+          helm push payment-*.tgz oci://crformation.azurecr.io/helm
