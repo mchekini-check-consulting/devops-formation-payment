@@ -296,23 +296,22 @@ stages:
     - script: docker load -i $(Build.ArtifactStagingDirectory)/docker-image/image.tar
       displayName: 'Docker Load Image'
 
-    - task: trivy@1
-      displayName: 'Trivy - Scan (fail on HIGH/CRITICAL)'
-      inputs:
-        image: $(IMAGE)
-        severities: 'HIGH,CRITICAL'
-        exitCode: '1'
-
     - script: |
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+          | sh -s -- -b /usr/local/bin
         trivy image \
-          --exit-code 0 \
           --severity HIGH,CRITICAL \
           --no-progress \
           --format json \
           --output $(Build.ArtifactStagingDirectory)/trivy-report.json \
           $(IMAGE)
-      displayName: 'Trivy - Export JSON Report'
-      condition: always()
+        trivy image \
+          --exit-code 1 \
+          --severity HIGH,CRITICAL \
+          --no-progress \
+          --format table \
+          $(IMAGE)
+      displayName: 'Trivy - Scan (fail on HIGH/CRITICAL)'
 
     - task: PublishBuildArtifacts@1
       displayName: 'Artifact - trivy-report.json'
