@@ -62,6 +62,32 @@ stages:
         ArtifactName: 'checkstyle-report'
 
 # ─────────────────────────────────────────────
+# STAGE : OWASP Dependency Check
+# ─────────────────────────────────────────────
+- stage: OWASP
+  displayName: 'OWASP Dependency Check'
+  dependsOn: Lint
+  jobs:
+  - job: OWASPJob
+    displayName: 'Dependency Check'
+    steps:
+    - task: Maven@3
+      displayName: 'Maven - dependency-check:check'
+      inputs:
+        mavenPomFile: 'pom.xml'
+        goals: 'verify -DskipTests -Ddependency-check.skip=false'
+        options: '-Dformat=HTML'
+        javaHomeOption: 'JDKVersion'
+        jdkVersionOption: '1.17'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - dependency-check-report'
+      condition: always()
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/target/dependency-check-report.html'
+        ArtifactName: 'owasp-dependency-check-report'
+
+# ─────────────────────────────────────────────
 # STAGE 1 : Tests Unitaires
 # ─────────────────────────────────────────────
 - stage: UnitTests
