@@ -302,8 +302,17 @@ stages:
         image: $(IMAGE)
         severities: 'HIGH,CRITICAL'
         exitCode: '1'
-        format: 'json'
-        output: '$(Build.ArtifactStagingDirectory)/trivy-report.json'
+
+    - script: |
+        trivy image \
+          --exit-code 0 \
+          --severity HIGH,CRITICAL \
+          --no-progress \
+          --format json \
+          --output $(Build.ArtifactStagingDirectory)/trivy-report.json \
+          $(IMAGE)
+      displayName: 'Trivy - Export JSON Report'
+      condition: always()
 
     - task: PublishBuildArtifacts@1
       displayName: 'Artifact - trivy-report.json'
