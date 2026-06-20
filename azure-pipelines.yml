@@ -17,30 +17,10 @@ variables:
 stages:
 
 # ─────────────────────────────────────────────
-# STAGE 0 : Gitleaks – Secret Scanning
-# ─────────────────────────────────────────────
-- stage: Gitleaks
-  displayName: 'Gitleaks – Secret Scanning'
-  jobs:
-  - job: GitleaksJob
-    steps:
-    - checkout: self
-      fetchDepth: 0
-
-    - task: Gitleaks@3
-      inputs:
-        scanlocation: '$(Build.SourcesDirectory)'
-        configtype: 'custom'
-        configfile: '$(Build.SourcesDirectory)/.gitleaks.toml'
-        scanmode: 'all'
-      displayName: 'Run Gitleaks'
-
-# ─────────────────────────────────────────────
 # STAGE : Lint (Checkstyle)
 # ─────────────────────────────────────────────
 - stage: Lint
   displayName: 'Lint (Checkstyle)'
-  dependsOn: Gitleaks
   jobs:
   - job: LintJob
     displayName: 'Checkstyle Analysis'
@@ -60,6 +40,26 @@ stages:
       inputs:
         PathtoPublish: '$(System.DefaultWorkingDirectory)/target/checkstyle-result.xml'
         ArtifactName: 'checkstyle-report'
+
+# ─────────────────────────────────────────────
+# STAGE : Gitleaks – Secret Scanning
+# ─────────────────────────────────────────────
+- stage: Gitleaks
+  displayName: 'Gitleaks – Secret Scanning'
+  dependsOn: Lint
+  jobs:
+  - job: GitleaksJob
+    steps:
+    - checkout: self
+      fetchDepth: 0
+
+    - task: Gitleaks@3
+      inputs:
+        scanlocation: '$(Build.SourcesDirectory)'
+        configtype: 'custom'
+        configfile: '$(Build.SourcesDirectory)/.gitleaks.toml'
+        scanmode: 'all'
+      displayName: 'Run Gitleaks'
 
 # ─────────────────────────────────────────────
 # STAGE : OWASP Dependency Check
@@ -88,11 +88,13 @@ stages:
         ArtifactName: 'owasp-dependency-check-report'
 
 # ─────────────────────────────────────────────
-# STAGE 1 : Tests Unitaires
+# STAGE : Tests Unitaires
 # ─────────────────────────────────────────────
 - stage: UnitTests
   displayName: 'Unit Tests'
-  dependsOn: Lint
+  dependsOn:
+  - Gitleaks
+  - OWASP
   jobs:
   - job: UnitTestsJob
     displayName: 'Run Unit Tests'
@@ -123,37 +125,13 @@ stages:
         ArtifactName: 'jacoco-unit-exec'
 
 # ─────────────────────────────────────────────
-# STAGE 2 : Mutation Tests (PIT)
-# ─────────────────────────────────────────────
-- stage: MutationTests
-  displayName: 'Mutation Tests (PIT)'
-  dependsOn: UnitTests
-  jobs:
-  - job: MutationJob
-    displayName: 'PIT Mutation Coverage'
-    steps:
-    - task: Maven@3
-      displayName: 'Maven - pitest mutationCoverage (≥70%)'
-      inputs:
-        mavenPomFile: 'pom.xml'
-        goals: 'test-compile org.pitest:pitest-maven:mutationCoverage'
-        options: '-Djacoco.skip=true'
-        javaHomeOption: 'JDKVersion'
-        jdkVersionOption: '1.17'
-
-    - task: PublishBuildArtifacts@1
-      displayName: 'Artifact - PIT report'
-      condition: always()
-      inputs:
-        PathtoPublish: '$(System.DefaultWorkingDirectory)/target/pit-reports'
-        ArtifactName: 'pit-mutation-report'
-
-# ─────────────────────────────────────────────
-# STAGE 3 : Tests Intégration
+# STAGE : Tests Intégration
 # ─────────────────────────────────────────────
 - stage: IntegrationTests
   displayName: 'Integration Tests'
-  dependsOn: MutationTests
+  dependsOn:
+  - Gitleaks
+  - OWASP
   jobs:
   - job: IntegrationTestsJob
     displayName: 'Run Integration Tests'
@@ -204,7 +182,33 @@ stages:
         ArtifactName: 'jacoco-coverage-report'
 
 # ─────────────────────────────────────────────
-# STAGE 3 : SonarQube
+# STAGE : Mutation Tests (PIT)
+# ─────────────────────────────────────────────
+- stage: MutationTests
+  displayName: 'Mutation Tests (PIT)'
+  dependsOn: IntegrationTests
+  jobs:
+  - job: MutationJob
+    displayName: 'PIT Mutation Coverage'
+    steps:
+    - task: Maven@3
+      displayName: 'Maven - pitest mutationCoverage (≥70%)'
+      inputs:
+        mavenPomFile: 'pom.xml'
+        goals: 'test-compile org.pitest:pitest-maven:mutationCoverage'
+        options: '-Djacoco.skip=true'
+        javaHomeOption: 'JDKVersion'
+        jdkVersionOption: '1.17'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - PIT report'
+      condition: always()
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/target/pit-reports'
+        ArtifactName: 'pit-mutation-report'
+
+# ─────────────────────────────────────────────
+# STAGE : SonarQube
 # ─────────────────────────────────────────────
 - stage: Sonar
   displayName: 'SonarQube Analysis'
@@ -233,7 +237,7 @@ stages:
         jdkVersionOption: '1.17'
 
 # ─────────────────────────────────────────────
-# STAGE 4 : Build
+# STAGE : Build
 # ─────────────────────────────────────────────
 - stage: Build
   displayName: 'Build'
@@ -257,7 +261,7 @@ stages:
         ArtifactName: 'jar'
 
 # ─────────────────────────────────────────────
-# STAGE 5 : Docker Build
+# STAGE : Docker Build
 # ─────────────────────────────────────────────
 - stage: DockerBuild
   displayName: 'Docker Build'
@@ -297,7 +301,7 @@ stages:
         ArtifactName: 'docker-image'
 
 # ─────────────────────────────────────────────
-# STAGE 6 : Trivy Security Scan
+# STAGE : Trivy Security Scan
 # ─────────────────────────────────────────────
 - stage: Trivy
   displayName: 'Trivy Security Scan'
@@ -347,7 +351,7 @@ stages:
         ArtifactName: 'trivy-report'
 
 # ─────────────────────────────────────────────
-# STAGE 7 : Push → ACR
+# STAGE : Push → ACR
 # ─────────────────────────────────────────────
 - stage: Push
   displayName: 'Push to ACR'
@@ -382,7 +386,7 @@ stages:
           docker push $(IMAGE)
 
 # ─────────────────────────────────────────────
-# STAGE 8 : Helm Push → ACR
+# STAGE : Helm Push → ACR
 # ─────────────────────────────────────────────
 - stage: HelmPush
   displayName: 'Push Helm Chart'
