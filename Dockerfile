@@ -12,7 +12,7 @@ RUN apt-get update && \
 RUN mvn package -DskipTests
 
 # ─── Stage 2 : Image finale minimale ─────────────────────────────────────────
-FROM eclipse-temurin:17-jre
+FROM eclipse-temurin:17-jre-jammy
 
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
 
