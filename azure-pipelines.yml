@@ -283,14 +283,25 @@ stages:
         echo "##vso[task.setvariable variable=SHORT_SHA]$SHORT_SHA"
       displayName: 'Set SHORT_SHA'
 
+    - task: AzureCLI@2
+      displayName: 'ACR Login (for buildx cache)'
+      inputs:
+        azureSubscription: 'sc-formation-devops-acr'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          az acr login --name crformation
+
     - script: |
         docker buildx create --use --name multiplatform
         docker buildx build \
           --platform linux/amd64,linux/arm64 \
-          -t $(IMAGE) \
+          --tag $(IMAGE) \
+          --cache-from type=registry,ref=crformation.azurecr.io/devops-formation-payment:buildcache \
+          --cache-to type=registry,ref=crformation.azurecr.io/devops-formation-payment:buildcache,mode=max \
           --output type=oci,dest=$(Build.ArtifactStagingDirectory)/image-oci.tar \
           .
-      displayName: 'Docker Buildx → OCI tar'
+      displayName: 'Docker Buildx Build → OCI tar'
 
     - task: PublishBuildArtifacts@1
       displayName: 'Artifact - image-oci.tar'
@@ -322,16 +333,19 @@ stages:
         downloadPath: '$(Build.ArtifactStagingDirectory)'
 
     - script: |
+        mkdir -p $(Build.ArtifactStagingDirectory)/oci-image
+        tar -xf $(Build.ArtifactStagingDirectory)/docker-image/image-oci.tar \
+          -C $(Build.ArtifactStagingDirectory)/oci-image
         curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
           | sh -s -- -b /usr/local/bin
         trivy image \
-          --input $(Build.ArtifactStagingDirectory)/docker-image/image-oci.tar \
+          --input $(Build.ArtifactStagingDirectory)/oci-image \
           --severity HIGH,CRITICAL \
           --no-progress \
           --format json \
           --output $(Build.ArtifactStagingDirectory)/trivy-report.json
         trivy image \
-          --input $(Build.ArtifactStagingDirectory)/docker-image/image-oci.tar \
+          --input $(Build.ArtifactStagingDirectory)/oci-image \
           --exit-code 1 \
           --severity HIGH,CRITICAL \
           --no-progress \
