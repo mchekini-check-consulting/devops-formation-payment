@@ -365,6 +365,7 @@ stages:
 - stage: Push
   displayName: 'Push to ACR'
   dependsOn: Trivy
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
   variables:
     IMAGE: crformation.azurecr.io/devops-formation-payment:$(BRANCH_SLUG)-$(SHORT_SHA)
   jobs:
@@ -400,6 +401,7 @@ stages:
 - stage: HelmPush
   displayName: 'Push Helm Chart'
   dependsOn: Push
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
   jobs:
   - job: HelmPushJob
     displayName: 'Package & Push Helm Chart'
