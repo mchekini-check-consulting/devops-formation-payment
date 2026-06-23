@@ -1,5 +1,4 @@
-trigger:
-- main
+trigger: none
 
 pr:
   branches:
@@ -273,15 +272,17 @@ stages:
   displayName: 'Docker Build Multi-Platform'
   dependsOn: MutationTests
   variables:
-    IMAGE: crformation.azurecr.io/devops-formation-payment:$(BRANCH_SLUG)-$(SHORT_SHA)
+    IMAGE: crformation.azurecr.io/devops-formation-payment:$(SHORT_SHA)-$(BRANCH_SLUG)-$(TIMESTAMP)
   jobs:
   - job: DockerBuildJob
     displayName: 'Buildx Multi-Platform → OCI artifact'
     steps:
     - script: |
         SHORT_SHA=$(echo $(Build.SourceVersion) | cut -c1-7)
+        TIMESTAMP=$(date +%Y%m%d%H%M%S)
         echo "##vso[task.setvariable variable=SHORT_SHA]$SHORT_SHA"
-      displayName: 'Set SHORT_SHA'
+        echo "##vso[task.setvariable variable=TIMESTAMP]$TIMESTAMP"
+      displayName: 'Set SHORT_SHA & TIMESTAMP'
 
     - task: AzureCLI@2
       displayName: 'ACR Login (for buildx cache)'
@@ -316,15 +317,17 @@ stages:
   displayName: 'Trivy Security Scan'
   dependsOn: DockerBuild
   variables:
-    IMAGE: crformation.azurecr.io/devops-formation-payment:$(BRANCH_SLUG)-$(SHORT_SHA)
+    IMAGE: crformation.azurecr.io/devops-formation-payment:$(SHORT_SHA)-$(BRANCH_SLUG)-$(TIMESTAMP)
   jobs:
   - job: TrivyJob
     displayName: 'Trivy Scan'
     steps:
     - script: |
         SHORT_SHA=$(echo $(Build.SourceVersion) | cut -c1-7)
+        TIMESTAMP=$(date +%Y%m%d%H%M%S)
         echo "##vso[task.setvariable variable=SHORT_SHA]$SHORT_SHA"
-      displayName: 'Set SHORT_SHA'
+        echo "##vso[task.setvariable variable=TIMESTAMP]$TIMESTAMP"
+      displayName: 'Set SHORT_SHA & TIMESTAMP'
 
     - task: DownloadBuildArtifacts@1
       displayName: 'Download OCI image'
@@ -365,17 +368,18 @@ stages:
 - stage: Push
   displayName: 'Push to ACR'
   dependsOn: Trivy
-  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
   variables:
-    IMAGE: crformation.azurecr.io/devops-formation-payment:$(BRANCH_SLUG)-$(SHORT_SHA)
+    IMAGE: crformation.azurecr.io/devops-formation-payment:$(SHORT_SHA)-$(BRANCH_SLUG)-$(TIMESTAMP)
   jobs:
   - job: PushJob
     displayName: 'Push Docker Image'
     steps:
     - script: |
         SHORT_SHA=$(echo $(Build.SourceVersion) | cut -c1-7)
+        TIMESTAMP=$(date +%Y%m%d%H%M%S)
         echo "##vso[task.setvariable variable=SHORT_SHA]$SHORT_SHA"
-      displayName: 'Set SHORT_SHA'
+        echo "##vso[task.setvariable variable=TIMESTAMP]$TIMESTAMP"
+      displayName: 'Set SHORT_SHA & TIMESTAMP'
 
     - task: DownloadBuildArtifacts@1
       displayName: 'Download OCI image'
@@ -401,7 +405,6 @@ stages:
 - stage: HelmPush
   displayName: 'Push Helm Chart'
   dependsOn: Push
-  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
   jobs:
   - job: HelmPushJob
     displayName: 'Package & Push Helm Chart'
