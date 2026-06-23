@@ -271,8 +271,6 @@ stages:
 - stage: DockerBuild
   displayName: 'Docker Build Multi-Platform'
   dependsOn: MutationTests
-  variables:
-    IMAGE: crformation.azurecr.io/devops-formation-payment:$(SHORT_SHA)-$(BRANCH_SLUG)-$(TIMESTAMP)
   jobs:
   - job: DockerBuildJob
     displayName: 'Buildx Multi-Platform → OCI artifact'
@@ -280,9 +278,14 @@ stages:
     - script: |
         SHORT_SHA=$(echo $(Build.SourceVersion) | cut -c1-7)
         TIMESTAMP=$(date +%Y%m%d%H%M%S)
+        IMAGE_TAG="${SHORT_SHA}-$(BRANCH_SLUG)-${TIMESTAMP}"
         echo "##vso[task.setvariable variable=SHORT_SHA]$SHORT_SHA"
         echo "##vso[task.setvariable variable=TIMESTAMP]$TIMESTAMP"
-      displayName: 'Set SHORT_SHA & TIMESTAMP'
+        echo "##vso[task.setvariable variable=IMAGE_TAG]$IMAGE_TAG"
+        echo "##vso[task.setvariable variable=IMAGE_TAG;isOutput=true]$IMAGE_TAG"
+        echo "Image tag: $IMAGE_TAG"
+      name: setVars
+      displayName: 'Set SHORT_SHA, TIMESTAMP & IMAGE_TAG'
 
     - task: AzureCLI@2
       displayName: 'ACR Login (for buildx cache)'
@@ -297,7 +300,7 @@ stages:
         docker buildx create --use --name multiplatform
         docker buildx build \
           --platform linux/amd64,linux/arm64 \
-          --tag $(IMAGE) \
+          --tag crformation.azurecr.io/devops-formation-payment:$(IMAGE_TAG) \
           --cache-from type=registry,ref=crformation.azurecr.io/devops-formation-payment:buildcache \
           --cache-to type=registry,ref=crformation.azurecr.io/devops-formation-payment:buildcache,mode=max \
           --output type=oci,dest=$(Build.ArtifactStagingDirectory)/image-oci.tar \
@@ -317,17 +320,12 @@ stages:
   displayName: 'Trivy Security Scan'
   dependsOn: DockerBuild
   variables:
-    IMAGE: crformation.azurecr.io/devops-formation-payment:$(SHORT_SHA)-$(BRANCH_SLUG)-$(TIMESTAMP)
+    IMAGE_TAG: $[stageDependencies.DockerBuild.DockerBuildJob.outputs['setVars.IMAGE_TAG']]
+    IMAGE: crformation.azurecr.io/devops-formation-payment:$(IMAGE_TAG)
   jobs:
   - job: TrivyJob
     displayName: 'Trivy Scan'
     steps:
-    - script: |
-        SHORT_SHA=$(echo $(Build.SourceVersion) | cut -c1-7)
-        TIMESTAMP=$(date +%Y%m%d%H%M%S)
-        echo "##vso[task.setvariable variable=SHORT_SHA]$SHORT_SHA"
-        echo "##vso[task.setvariable variable=TIMESTAMP]$TIMESTAMP"
-      displayName: 'Set SHORT_SHA & TIMESTAMP'
 
     - task: DownloadBuildArtifacts@1
       displayName: 'Download OCI image'
@@ -367,19 +365,16 @@ stages:
 # ─────────────────────────────────────────────
 - stage: Push
   displayName: 'Push to ACR'
-  dependsOn: Trivy
+  dependsOn:
+  - Trivy
+  - DockerBuild
   variables:
-    IMAGE: crformation.azurecr.io/devops-formation-payment:$(SHORT_SHA)-$(BRANCH_SLUG)-$(TIMESTAMP)
+    IMAGE_TAG: $[stageDependencies.DockerBuild.DockerBuildJob.outputs['setVars.IMAGE_TAG']]
+    IMAGE: crformation.azurecr.io/devops-formation-payment:$(IMAGE_TAG)
   jobs:
   - job: PushJob
     displayName: 'Push Docker Image'
     steps:
-    - script: |
-        SHORT_SHA=$(echo $(Build.SourceVersion) | cut -c1-7)
-        TIMESTAMP=$(date +%Y%m%d%H%M%S)
-        echo "##vso[task.setvariable variable=SHORT_SHA]$SHORT_SHA"
-        echo "##vso[task.setvariable variable=TIMESTAMP]$TIMESTAMP"
-      displayName: 'Set SHORT_SHA & TIMESTAMP'
 
     - task: DownloadBuildArtifacts@1
       displayName: 'Download OCI image'
@@ -404,7 +399,11 @@ stages:
 # ─────────────────────────────────────────────
 - stage: HelmPush
   displayName: 'Push Helm Chart'
-  dependsOn: Push
+  dependsOn:
+  - Push
+  - DockerBuild
+  variables:
+    IMAGE_TAG: $[stageDependencies.DockerBuild.DockerBuildJob.outputs['setVars.IMAGE_TAG']]
   jobs:
   - job: HelmPushJob
     displayName: 'Package & Push Helm Chart'
@@ -418,6 +417,14 @@ stages:
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
+          set -e
           az acr login --name crformation
+
+          # Injecter le tag image dans appVersion du Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"$(IMAGE_TAG)\"/" ./helm/payment/Chart.yaml
+
+          echo "appVersion mis à jour : $(IMAGE_TAG)"
+          cat ./helm/payment/Chart.yaml
+
           helm package ./helm/payment
           helm push payment-*.tgz oci://crformation.azurecr.io/helm
