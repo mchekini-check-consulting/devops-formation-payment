@@ -420,11 +420,21 @@ stages:
           set -e
           az acr login --name crformation
 
+          # Injecter la version du chart (unique par build)
+          CHART_VERSION="1.0.$(Build.BuildId)"
+          sed -i "s/^version:.*/version: ${CHART_VERSION}/" ./helm/payment/Chart.yaml
+
           # Injecter le tag image dans appVersion du Chart.yaml
           sed -i "s/^appVersion:.*/appVersion: \"$(IMAGE_TAG)\"/" ./helm/payment/Chart.yaml
 
+          # Injecter le tag image dans values.yaml
+          sed -i "s/^  tag:.*/  tag: \"$(IMAGE_TAG)\"/" ./helm/payment/values.yaml
+
+          echo "Chart version : ${CHART_VERSION}"
           echo "appVersion mis à jour : $(IMAGE_TAG)"
           cat ./helm/payment/Chart.yaml
+          echo "--- values.yaml image section ---"
+          grep -A2 'image:' ./helm/payment/values.yaml
 
           helm package ./helm/payment
           helm push payment-*.tgz oci://crformation.azurecr.io/helm
