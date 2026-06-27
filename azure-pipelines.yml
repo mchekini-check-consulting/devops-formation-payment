@@ -1,22 +1,430 @@
-# Maven
-# Build your Java project and run tests with Apache Maven.
-# Add steps that analyze code, save build artifacts, deploy, and more:
-# https://docs.microsoft.com/azure/devops/pipelines/languages/java
+trigger: none
 
-trigger:
-- main
+pr:
+  branches:
+    include:
+    - '*'
 
 pool:
   vmImage: ubuntu-latest
 
-steps:
-- task: Maven@3
-  inputs:
-    mavenPomFile: 'pom.xml'
-    mavenOptions: '-Xmx3072m'
-    javaHomeOption: 'JDKVersion'
-    jdkVersionOption: '1.11'
-    jdkArchitectureOption: 'x64'
-    publishJUnitResults: true
-    testResultsFiles: '**/surefire-reports/TEST-*.xml'
-    goals: 'package'
+variables:
+- group: variable
+- name: BRANCH_SLUG
+  value: $[replace(variables['System.PullRequest.TargetBranch'], 'refs/heads/', '')]
+
+stages:
+
+# ─────────────────────────────────────────────
+# STAGE : Lint (Checkstyle)
+# ─────────────────────────────────────────────
+- stage: Lint
+  displayName: 'Lint (Checkstyle)'
+  jobs:
+  - job: LintJob
+    displayName: 'Checkstyle Analysis'
+    steps:
+    - task: Maven@3
+      displayName: 'Maven - checkstyle:check'
+      inputs:
+        mavenPomFile: 'pom.xml'
+        goals: 'checkstyle:check'
+        options: '-DskipTests'
+        javaHomeOption: 'JDKVersion'
+        jdkVersionOption: '1.17'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - checkstyle-report'
+      condition: always()
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/target/checkstyle-result.xml'
+        ArtifactName: 'checkstyle-report'
+
+# ─────────────────────────────────────────────
+# STAGE : Gitleaks – Secret Scanning
+# ─────────────────────────────────────────────
+- stage: Gitleaks
+  displayName: 'Gitleaks – Secret Scanning'
+  dependsOn: Lint
+  jobs:
+  - job: GitleaksJob
+    steps:
+    - checkout: self
+      fetchDepth: 0
+
+    - task: Gitleaks@3
+      inputs:
+        scanlocation: '$(Build.SourcesDirectory)'
+        configtype: 'custom'
+        configfile: '$(Build.SourcesDirectory)/.gitleaks.toml'
+        scanmode: 'all'
+      displayName: 'Run Gitleaks'
+
+# ─────────────────────────────────────────────
+# STAGE : OWASP Dependency Check
+# ─────────────────────────────────────────────
+- stage: OWASP
+  displayName: 'OWASP Dependency Check'
+  dependsOn: Lint
+  jobs:
+  - job: OWASPJob
+    displayName: 'Dependency Check'
+    steps:
+    - task: Maven@3
+      displayName: 'Maven - dependency-check:check'
+      inputs:
+        mavenPomFile: 'pom.xml'
+        goals: 'verify -DskipTests -Ddependency-check.skip=false'
+        options: '-Dformat=HTML'
+        javaHomeOption: 'JDKVersion'
+        jdkVersionOption: '1.17'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - dependency-check-report'
+      condition: always()
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/target'
+        ArtifactName: 'owasp-dependency-check-report'
+
+# ─────────────────────────────────────────────
+# STAGE : Tests Unitaires
+# ─────────────────────────────────────────────
+- stage: UnitTests
+  displayName: 'Unit Tests'
+  dependsOn:
+  - Gitleaks
+  - OWASP
+  jobs:
+  - job: UnitTestsJob
+    displayName: 'Run Unit Tests'
+    steps:
+    - task: Maven@3
+      displayName: 'Maven - surefire (*Test.java)'
+      inputs:
+        mavenPomFile: 'pom.xml'
+        goals: 'test'
+        publishJUnitResults: true
+        testResultsFiles: '**/surefire-reports/TEST-*.xml'
+        testRunTitle: 'Unit Tests'
+        javaHomeOption: 'JDKVersion'
+        jdkVersionOption: '1.17'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - surefire-reports'
+      condition: always()
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/target/surefire-reports'
+        ArtifactName: 'unit-test-reports'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - jacoco unit exec'
+      condition: always()
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/target/jacoco-all.exec'
+        ArtifactName: 'jacoco-unit-exec'
+
+# ─────────────────────────────────────────────
+# STAGE : Tests Intégration
+# ─────────────────────────────────────────────
+- stage: IntegrationTests
+  displayName: 'Integration Tests'
+  dependsOn:
+  - Gitleaks
+  - OWASP
+  jobs:
+  - job: IntegrationTestsJob
+    displayName: 'Run Integration Tests'
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: payment_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+        - 5432:5432
+    steps:
+    - task: Maven@3
+      displayName: 'Maven - failsafe (*IT.java)'
+      inputs:
+        mavenPomFile: 'pom.xml'
+        goals: 'verify'
+        publishJUnitResults: true
+        testResultsFiles: '**/failsafe-reports/TEST-*.xml'
+        testRunTitle: 'Integration Tests'
+        javaHomeOption: 'JDKVersion'
+        jdkVersionOption: '1.17'
+      env:
+        SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/payment_db
+        SPRING_DATASOURCE_USERNAME: postgres
+        SPRING_DATASOURCE_PASSWORD: postgres
+
+    - task: PublishCodeCoverageResults@2
+      displayName: 'Publish Coverage - JaCoCo'
+      condition: always()
+      inputs:
+        summaryFileLocation: '$(System.DefaultWorkingDirectory)/target/site/jacoco/jacoco.xml'
+        pathToSources: '$(System.DefaultWorkingDirectory)/src/main/java'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - failsafe-reports'
+      condition: always()
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/target/failsafe-reports'
+        ArtifactName: 'integration-test-reports'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - jacoco HTML report'
+      condition: always()
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/target/site/jacoco'
+        ArtifactName: 'jacoco-coverage-report'
+
+# ─────────────────────────────────────────────
+# STAGE : SonarQube
+# ─────────────────────────────────────────────
+- stage: Sonar
+  displayName: 'SonarQube Analysis'
+  dependsOn: IntegrationTests
+  jobs:
+  - job: SonarJob
+    displayName: 'Sonar Scan'
+    steps:
+    - task: DownloadBuildArtifacts@1
+      displayName: 'Download jacoco report'
+      inputs:
+        artifactName: 'jacoco-coverage-report'
+        downloadPath: '$(Pipeline.Workspace)/jacoco'
+
+    - task: Maven@3
+      displayName: 'Maven - compile + sonar:sonar'
+      inputs:
+        mavenPomFile: 'pom.xml'
+        goals: 'compile sonar:sonar'
+        options: >-
+          -DskipTests
+          -Dsonar.host.url=$(SONAR_HOST_URL)
+          -Dsonar.token=$(SONAR_TOKEN)
+          -Dsonar.coverage.jacoco.xmlReportPaths=$(Pipeline.Workspace)/jacoco/jacoco-coverage-report/jacoco.xml
+        javaHomeOption: 'JDKVersion'
+        jdkVersionOption: '1.17'
+
+# ─────────────────────────────────────────────
+# STAGE : Build JAR
+# ─────────────────────────────────────────────
+- stage: Build
+  displayName: 'Build'
+  dependsOn: Sonar
+  jobs:
+  - job: BuildJob
+    displayName: 'Maven Package'
+    steps:
+    - task: Maven@3
+      displayName: 'Maven - package -DskipTests'
+      inputs:
+        mavenPomFile: 'pom.xml'
+        goals: 'package -DskipTests'
+        javaHomeOption: 'JDKVersion'
+        jdkVersionOption: '1.17'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - JAR'
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/target'
+        ArtifactName: 'jar'
+
+# ─────────────────────────────────────────────
+# STAGE : Mutation Tests (PIT)
+# ─────────────────────────────────────────────
+- stage: MutationTests
+  displayName: 'Mutation Tests (PIT)'
+  dependsOn: Build
+  jobs:
+  - job: MutationJob
+    displayName: 'PIT Mutation Coverage'
+    steps:
+    - task: DownloadBuildArtifacts@1
+      displayName: 'Download JAR artifact'
+      inputs:
+        artifactName: 'jar'
+        downloadPath: '$(System.DefaultWorkingDirectory)/target'
+
+    - task: Maven@3
+      displayName: 'Maven - pitest mutationCoverage (≥70%)'
+      inputs:
+        mavenPomFile: 'pom.xml'
+        goals: 'test-compile org.pitest:pitest-maven:mutationCoverage'
+        options: '-Djacoco.skip=true'
+        javaHomeOption: 'JDKVersion'
+        jdkVersionOption: '1.17'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - PIT report'
+      condition: always()
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/target/pit-reports'
+        ArtifactName: 'pit-mutation-report'
+
+# ─────────────────────────────────────────────
+# STAGE : Docker Build Multi-Platform (OCI)
+# ─────────────────────────────────────────────
+- stage: DockerBuild
+  displayName: 'Docker Build Multi-Platform'
+  dependsOn: MutationTests
+  jobs:
+  - job: DockerBuildJob
+    displayName: 'Buildx Multi-Platform → OCI artifact'
+    steps:
+    - script: |
+        SHORT_SHA=$(echo $(Build.SourceVersion) | cut -c1-7)
+        TIMESTAMP=$(date +%Y%m%d%H%M%S)
+        IMAGE_TAG="${SHORT_SHA}-$(BRANCH_SLUG)-${TIMESTAMP}"
+        echo "##vso[task.setvariable variable=SHORT_SHA]$SHORT_SHA"
+        echo "##vso[task.setvariable variable=TIMESTAMP]$TIMESTAMP"
+        echo "##vso[task.setvariable variable=IMAGE_TAG]$IMAGE_TAG"
+        echo "##vso[task.setvariable variable=IMAGE_TAG;isOutput=true]$IMAGE_TAG"
+        echo "Image tag: $IMAGE_TAG"
+      name: setVars
+      displayName: 'Set SHORT_SHA, TIMESTAMP & IMAGE_TAG'
+
+    - task: AzureCLI@2
+      displayName: 'ACR Login (for buildx cache)'
+      inputs:
+        azureSubscription: 'sc-formation-devops-acr'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          az acr login --name crformation
+
+    - script: |
+        docker buildx create --use --name multiplatform
+        docker buildx build \
+          --platform linux/amd64,linux/arm64 \
+          --tag crformation.azurecr.io/devops-formation-payment:$(IMAGE_TAG) \
+          --cache-from type=registry,ref=crformation.azurecr.io/devops-formation-payment:buildcache \
+          --cache-to type=registry,ref=crformation.azurecr.io/devops-formation-payment:buildcache,mode=max \
+          --output type=oci,dest=$(Build.ArtifactStagingDirectory)/image-oci.tar \
+          .
+      displayName: 'Docker Buildx Build → OCI tar'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - image-oci.tar'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)/image-oci.tar'
+        ArtifactName: 'docker-image'
+
+# ─────────────────────────────────────────────
+# STAGE : Trivy Security Scan
+# ─────────────────────────────────────────────
+- stage: Trivy
+  displayName: 'Trivy Security Scan'
+  dependsOn: DockerBuild
+  variables:
+    IMAGE_TAG: $[stageDependencies.DockerBuild.DockerBuildJob.outputs['setVars.IMAGE_TAG']]
+    IMAGE: crformation.azurecr.io/devops-formation-payment:$(IMAGE_TAG)
+  jobs:
+  - job: TrivyJob
+    displayName: 'Trivy Scan'
+    steps:
+
+    - task: DownloadBuildArtifacts@1
+      displayName: 'Download OCI image'
+      inputs:
+        artifactName: 'docker-image'
+        downloadPath: '$(Build.ArtifactStagingDirectory)'
+
+    - script: |
+        mkdir -p $(Build.ArtifactStagingDirectory)/oci-image
+        tar -xf $(Build.ArtifactStagingDirectory)/docker-image/image-oci.tar \
+          -C $(Build.ArtifactStagingDirectory)/oci-image
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+          | sh -s -- -b /usr/local/bin
+        trivy image \
+          --input $(Build.ArtifactStagingDirectory)/oci-image \
+          --severity HIGH,CRITICAL \
+          --no-progress \
+          --format json \
+          --output $(Build.ArtifactStagingDirectory)/trivy-report.json
+        trivy image \
+          --input $(Build.ArtifactStagingDirectory)/oci-image \
+          --exit-code 1 \
+          --severity HIGH,CRITICAL \
+          --no-progress \
+          --format table
+      displayName: 'Trivy - Scan (fail on HIGH/CRITICAL)'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - trivy-report.json'
+      condition: always()
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)/trivy-report.json'
+        ArtifactName: 'trivy-report'
+
+# ─────────────────────────────────────────────
+# STAGE : Push → ACR
+# ─────────────────────────────────────────────
+- stage: Push
+  displayName: 'Push to ACR'
+  dependsOn:
+  - Trivy
+  - DockerBuild
+  variables:
+    IMAGE_TAG: $[stageDependencies.DockerBuild.DockerBuildJob.outputs['setVars.IMAGE_TAG']]
+    IMAGE: crformation.azurecr.io/devops-formation-payment:$(IMAGE_TAG)
+  jobs:
+  - job: PushJob
+    displayName: 'Push Docker Image'
+    steps:
+
+    - task: DownloadBuildArtifacts@1
+      displayName: 'Download OCI image'
+      inputs:
+        artifactName: 'docker-image'
+        downloadPath: '$(Build.ArtifactStagingDirectory)'
+
+    - task: AzureCLI@2
+      displayName: 'Push OCI image → ACR'
+      inputs:
+        azureSubscription: 'sc-formation-devops-acr'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          az acr login --name crformation
+          skopeo copy \
+            oci-archive:$(Build.ArtifactStagingDirectory)/docker-image/image-oci.tar \
+            docker://$(IMAGE)
+
+# ─────────────────────────────────────────────
+# STAGE : Helm Push → ACR
+# ─────────────────────────────────────────────
+- stage: HelmPush
+  displayName: 'Push Helm Chart'
+  dependsOn:
+  - Push
+  - DockerBuild
+  variables:
+    IMAGE_TAG: $[stageDependencies.DockerBuild.DockerBuildJob.outputs['setVars.IMAGE_TAG']]
+  jobs:
+  - job: HelmPushJob
+    displayName: 'Package & Push Helm Chart'
+    steps:
+    - checkout: self
+
+    - task: AzureCLI@2
+      displayName: 'Helm Package & Push → ACR'
+      inputs:
+        azureSubscription: 'sc-formation-devops-acr'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -e
+          az acr login --name crformation
+
+          # Injecter le tag image dans appVersion du Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"$(IMAGE_TAG)\"/" ./helm/payment/Chart.yaml
+
+          echo "appVersion mis à jour : $(IMAGE_TAG)"
+          cat ./helm/payment/Chart.yaml
+
+          helm package ./helm/payment
+          helm push payment-*.tgz oci://crformation.azurecr.io/helm

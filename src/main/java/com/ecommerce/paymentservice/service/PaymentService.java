@@ -6,7 +6,6 @@ import com.ecommerce.paymentservice.model.Payment;
 import com.ecommerce.paymentservice.model.PaymentStatus;
 import com.ecommerce.paymentservice.repository.PaymentRepository;
 import com.ecommerce.paymentservice.exception.PaymentAlreadyProcessedException;
-import com.ecommerce.paymentservice.exception.PaymentNotFoundException;
 import org.springframework.dao.DataIntegrityViolationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

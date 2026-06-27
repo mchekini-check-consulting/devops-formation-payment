@@ -1,0 +1,4 @@
+[allowlist]
+  description = "Allow Azure Application Insights InstrumentationKeys"
+  regexTarget = "match"
+  regexes = ['''InstrumentationKey=[\w-]+''']

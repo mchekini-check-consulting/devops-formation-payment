@@ -1,0 +1,150 @@
+# CD Pipeline – déploiement manuel uniquement
+#
+# Environments Azure DevOps à configurer dans le portail :
+#   dev    → pas d'approbation
+#   qualif → approbation recommandée
+#   prod   → approbation obligatoire
+#
+# Variables requises dans le groupe 'variable' :
+#   AKS_RESOURCE_GROUP, AKS_CLUSTER_NAME
+
+trigger: none
+pr: none
+
+parameters:
+- name: chartName
+  displayName: "Nom du chart Helm dans l'ACR (ex: payment)"
+  type: string
+  default: payment
+
+- name: chartVersion
+  displayName: "Version du chart Helm (ex: 1.0.5821)"
+  type: string
+
+- name: environment
+  displayName: "Environnement cible"
+  type: string
+  values:
+  - dev
+  - qualif
+  - prod
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+- group: variable
+- name: ACR_NAME
+  value: crformation
+- name: IMAGE_REPO
+  value: crformation.azurecr.io/devops-formation-payment
+- name: HELM_OCI_REPO
+  value: oci://crformation.azurecr.io/helm
+
+stages:
+
+# ─────────────────────────────────────────────
+# STAGE 1 : Verify – Chart existe dans l'ACR ?
+# ─────────────────────────────────────────────
+- stage: VerifyChart
+  displayName: 'Verify Chart → ACR'
+  jobs:
+  - job: VerifyChartJob
+    steps:
+    - task: AzureCLI@2
+      displayName: 'Vérifier existence chart ${{ parameters.chartName }}:${{ parameters.chartVersion }}'
+      inputs:
+        azureSubscription: 'sc-formation-devops-acr'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -e
+          az acr login --name $(ACR_NAME)
+
+          TAGS=$(az acr repository show-tags \
+            --name $(ACR_NAME) \
+            --repository helm/${{ parameters.chartName }} \
+            --output tsv)
+
+          if echo "$TAGS" | grep -qx "${{ parameters.chartVersion }}"; then
+            echo "Chart ${{ parameters.chartName }}:${{ parameters.chartVersion }} trouvé dans l'ACR ✅"
+          else
+            echo "##[error] Chart ${{ parameters.chartName }}:${{ parameters.chartVersion }} introuvable dans l'ACR."
+            echo "Tags disponibles :"
+            echo "$TAGS"
+            exit 1
+          fi
+
+# ─────────────────────────────────────────────
+# STAGE 2 : Deploy → environnement choisi
+# ─────────────────────────────────────────────
+- stage: Deploy_${{ parameters.environment }}
+  displayName: 'Deploy → ${{ parameters.environment }} (chart ${{ parameters.chartVersion }})'
+  dependsOn: VerifyChart
+  jobs:
+  - deployment: DeployHelm
+    displayName: 'Helm Upgrade / Install'
+    environment: ${{ parameters.environment }}
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+
+          # Login ACR via service connection ACR
+          - task: AzureCLI@2
+            displayName: 'ACR Login'
+            inputs:
+              azureSubscription: 'sc-formation-devops-acr'
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -e
+                az acr login --name $(ACR_NAME)
+
+          # Pull chart + deploy via service connection AKS
+          - task: AzureCLI@2
+            displayName: 'Helm Deploy → ${{ parameters.environment }}'
+            inputs:
+              azureSubscription: 'sc-formation-devops-aks'
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -e
+
+                # Installer yq pour lire appVersion depuis le chart extrait
+                YQ_VERSION="4.44.1"
+                sudo wget -qO /usr/local/bin/yq \
+                  https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64
+                sudo chmod +x /usr/local/bin/yq
+
+                # Extraire le chart OCI pour accéder aux values + appVersion
+                helm pull "$(HELM_OCI_REPO)/${{ parameters.chartName }}" \
+                  --version "${{ parameters.chartVersion }}" \
+                  --untar \
+                  --untardir /tmp/helm-chart
+
+                # Lire le tag image depuis appVersion (baked lors de la CI)
+                IMAGE_TAG=$(yq e '.appVersion' /tmp/helm-chart/${{ parameters.chartName }}/Chart.yaml)
+
+                echo "Chart     : ${{ parameters.chartName }} ${{ parameters.chartVersion }}"
+                echo "Image tag : ${IMAGE_TAG}"
+                echo "Env       : ${{ parameters.environment }}"
+
+                # Kubeconfig AKS
+                az aks get-credentials \
+                  --resource-group $(AKS_RESOURCE_GROUP) \
+                  --name $(AKS_CLUSTER_NAME) \
+                  --overwrite-existing
+
+                helm upgrade --install "${{ parameters.chartName }}" \
+                  "$(HELM_OCI_REPO)/${{ parameters.chartName }}" \
+                  --version "${{ parameters.chartVersion }}" \
+                  -f /tmp/helm-chart/${{ parameters.chartName }}/values.yaml \
+                  -f /tmp/helm-chart/${{ parameters.chartName }}/values-${{ parameters.environment }}.yaml \
+                  --set image.repository=$(IMAGE_REPO) \
+                  --set image.tag="${IMAGE_TAG}" \
+                  --namespace ${{ parameters.environment }} \
+                  --create-namespace \
+                  --atomic \
+                  --timeout 5m \
+                  --wait
