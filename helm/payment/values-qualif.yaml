@@ -3,10 +3,10 @@ replicaCount: 2
 resources:
   requests:
     cpu: 200m
-    memory: 512Mi
+    memory: 411Mi
   limits:
     cpu: "1"
-    memory: 1Gi
+    memory: 1520Mi
 
 configmap:
   SPRING_PROFILES_ACTIVE: "prod"
