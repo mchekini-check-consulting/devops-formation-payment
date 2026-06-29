@@ -1,8 +1,8 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-payment
-  namespace: {{ .Values.namespace }}
+  name: allow-{{ .Chart.Name }}
+  namespace: {{ .Release.Namespace }}
 spec:
   podSelector:
     matchLabels:
@@ -14,15 +14,24 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: ingress-nginx
+              kubernetes.io/metadata.name: {{ .Values.netpolicies.ingresssources }}
       ports:
         - port: {{ .Values.netpolicies.ingressdestports }}
           protocol: {{ .Values.netpolicies.ingressprotocol }}
   egress:
+    # pgcat pour les requêtes applicatives (lectures via replicas)
     - to:
         - podSelector:
             matchLabels:
               app: {{ .Values.netpolicies.egresssources }}
+      ports:
+        - port: {{ .Values.netpolicies.egressdestports }}
+          protocol: {{ .Values.netpolicies.egressprotocol }}
+    # postgres-primary pour les migrations (initContainer)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
       ports:
         - port: {{ .Values.netpolicies.egressdestports }}
           protocol: {{ .Values.netpolicies.egressprotocol }}

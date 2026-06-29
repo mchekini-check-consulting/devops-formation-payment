@@ -1,0 +1,4 @@
+# CVE-2026-40973: Spring Boot arbitrary code execution via predictable session ID
+# Fix requires Spring Boot 3.5.14+ (not yet released)
+# Accepted risk — internal service, not exposed to untrusted input
+CVE-2026-40973

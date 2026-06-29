@@ -82,19 +82,41 @@
 
 
 
+    <!-- OTEL → Azure Monitor : ERROR uniquement pour le framework -->
     <appender name="OTEL" class="io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>ERROR</level>
+        </filter>
         <captureMdcAttributes>*</captureMdcAttributes>
         <captureExperimentalAttributes>true</captureExperimentalAttributes>
     </appender>
 
+    <!-- OTEL applicatif → Azure Monitor : INFO+ pour le code métier -->
+    <appender name="OTEL_APP" class="io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>INFO</level>
+        </filter>
+        <captureMdcAttributes>*</captureMdcAttributes>
+        <captureExperimentalAttributes>true</captureExperimentalAttributes>
+    </appender>
 
+    <!-- Root : console en INFO, OTEL en ERROR (framework) -->
     <root level="${LOG_LEVEL:-INFO}">
         <appender-ref ref="STDOUT_JSON"/>
         <appender-ref ref="OTEL" />
     </root>
 
+    <!-- Code métier : INFO+ vers App Insights -->
+    <logger name="com.ecommerce.paymentservice" level="INFO" additivity="true">
+        <appender-ref ref="OTEL_APP" />
+    </logger>
+
+    <!-- Framework : WARN dans la console, ERROR dans OTEL (via root) -->
     <logger name="io.netty" level="WARN"/>
     <logger name="reactor"  level="WARN"/>
     <logger name="com.zaxxer.hikari" level="WARN"/>
+    <logger name="org.hibernate" level="WARN"/>
+    <logger name="org.springframework" level="WARN"/>
+    <logger name="org.apache" level="WARN"/>
 
 </configuration>

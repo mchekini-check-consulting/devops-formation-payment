@@ -12,9 +12,11 @@ RUN apt-get update && \
 RUN mvn package -DskipTests
 
 # ─── Stage 2 : Image finale minimale ─────────────────────────────────────────
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:17-jre-jammy
 
-RUN addgroup -S spring && adduser -S spring -G spring
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r spring && useradd -r -g spring spring
 
 WORKDIR /app
 COPY --from=builder /app/target/payment-service-0.0.1-SNAPSHOT.jar app.jar

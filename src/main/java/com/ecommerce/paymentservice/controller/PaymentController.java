@@ -7,15 +7,19 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.UUID;
 
 import org.slf4j.MDC;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.web.bind.annotation.*;
-import java.util.Map;
 
 
 @RestController
@@ -23,7 +27,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PaymentController {
 
-    private static final Logger logger = LoggerFactory.getLogger(PaymentController.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(PaymentController.class);
     
     private final PaymentService paymentService;
     
@@ -35,7 +39,7 @@ public class PaymentController {
         request.setUserId(userId);
         MDC.put("userId", userId);
         // Log structuré automatiquement au format JSON
-        logger.info("Creating payment request");
+        LOGGER.info("Creating payment request");
 
         PaymentResponse response = paymentService.processPayment(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
@@ -45,7 +49,7 @@ public class PaymentController {
     public ResponseEntity<List<PaymentResponse>> getAllPayments() {
 
         // Log structuré automatiquement au format JSON
-        logger.info("Listing All payments request");
+        LOGGER.info("Listing All payments request");
 
         return ResponseEntity.ok(paymentService.getAllPayments());
     }
