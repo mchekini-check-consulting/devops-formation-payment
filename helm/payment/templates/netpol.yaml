@@ -35,6 +35,12 @@ spec:
       ports:
         - port: {{ .Values.netpolicies.egressdestports }}
           protocol: {{ .Values.netpolicies.egressprotocol }}
+    # DNS (kube-dns)
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
     # Application Insights
     - ports:
         - port: {{ .Values.netpolicies.httpsinternetports }}
