@@ -1,4 +1,8 @@
-# CD Pipeline – déploiement manuel uniquement
+# CD Pipeline
+#
+# Deux modes de fonctionnement :
+#   1. Automatique : push sur main → build + deploy en dev (sans approbation)
+#   2. Manuel      : choix de l'environnement (qualif/prod) + chartVersion → validate + deploy
 #
 # Environments Azure DevOps à configurer dans le portail :
 #   dev    → pas d'approbation
@@ -8,26 +12,27 @@
 # Variables requises dans le groupe 'variable' :
 #   AKS_RESOURCE_GROUP, AKS_CLUSTER_NAME
 
-trigger: none
+trigger:
+  branches:
+    include:
+    - main
+
 pr: none
 
 parameters:
-- name: chartName
-  displayName: "Nom du chart Helm dans l'ACR (ex: payment)"
-  type: string
-  default: payment
-
-- name: chartVersion
-  displayName: "Version du chart Helm (ex: 1.0.5821)"
-  type: string
-
 - name: environment
   displayName: "Environnement cible"
   type: string
+  default: dev
   values:
   - dev
   - qualif
   - prod
+
+- name: chartVersion
+  displayName: "Version du chart Helm (ex: 1.0.5821) – requis pour qualif/prod"
+  type: string
+  default: ' '
 
 pool:
   vmImage: ubuntu-latest
@@ -40,51 +45,294 @@ variables:
   value: crformation.azurecr.io/devops-formation-payment
 - name: HELM_OCI_REPO
   value: oci://crformation.azurecr.io/helm
+- name: CHART_NAME
+  value: payment
 
 stages:
 
+# =============================================================
+#  DEV FLOW : Build → Docker → Trivy → Push → HelmPush → Deploy
+#  Conditionné à environment == 'dev'
+# =============================================================
+
 # ─────────────────────────────────────────────
-# STAGE 1 : Verify – Chart existe dans l'ACR ?
+# STAGE : Build JAR
 # ─────────────────────────────────────────────
-- stage: VerifyChart
-  displayName: 'Verify Chart → ACR'
+- stage: Build
+  displayName: 'Build'
+  condition: eq('${{ parameters.environment }}', 'dev')
   jobs:
-  - job: VerifyChartJob
+  - job: BuildJob
+    displayName: 'Maven Package'
     steps:
+    - task: Maven@3
+      displayName: 'Maven - package -DskipTests'
+      inputs:
+        mavenPomFile: 'pom.xml'
+        goals: 'package -DskipTests'
+        javaHomeOption: 'JDKVersion'
+        jdkVersionOption: '1.17'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - JAR'
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/target'
+        ArtifactName: 'jar'
+
+# ─────────────────────────────────────────────
+# STAGE : Docker Build Multi-Platform (OCI)
+# ─────────────────────────────────────────────
+- stage: DockerBuild
+  displayName: 'Docker Build Multi-Platform'
+  condition: eq('${{ parameters.environment }}', 'dev')
+  dependsOn: Build
+  jobs:
+  - job: DockerBuildJob
+    displayName: 'Buildx Multi-Platform → OCI artifact'
+    steps:
+    - script: |
+        SHORT_SHA=$(echo $(Build.SourceVersion) | cut -c1-7)
+        TIMESTAMP=$(date +%Y%m%d%H%M%S)
+        IMAGE_TAG="${SHORT_SHA}-main-${TIMESTAMP}"
+        echo "##vso[task.setvariable variable=SHORT_SHA]$SHORT_SHA"
+        echo "##vso[task.setvariable variable=TIMESTAMP]$TIMESTAMP"
+        echo "##vso[task.setvariable variable=IMAGE_TAG]$IMAGE_TAG"
+        echo "##vso[task.setvariable variable=IMAGE_TAG;isOutput=true]$IMAGE_TAG"
+        echo "Image tag: $IMAGE_TAG"
+      name: setVars
+      displayName: 'Set SHORT_SHA, TIMESTAMP & IMAGE_TAG'
+
     - task: AzureCLI@2
-      displayName: 'Vérifier existence chart ${{ parameters.chartName }}:${{ parameters.chartVersion }}'
+      displayName: 'ACR Login (for buildx cache)'
+      inputs:
+        azureSubscription: 'sc-formation-devops-acr'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          az acr login --name crformation
+
+    - script: |
+        docker buildx create --use --name multiplatform
+        docker buildx build \
+          --platform linux/amd64,linux/arm64 \
+          --tag crformation.azurecr.io/devops-formation-payment:$(IMAGE_TAG) \
+          --cache-from type=registry,ref=crformation.azurecr.io/devops-formation-payment:buildcache \
+          --cache-to type=registry,ref=crformation.azurecr.io/devops-formation-payment:buildcache,mode=max \
+          --output type=oci,dest=$(Build.ArtifactStagingDirectory)/image-oci.tar \
+          .
+      displayName: 'Docker Buildx Build → OCI tar'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - image-oci.tar'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)/image-oci.tar'
+        ArtifactName: 'docker-image'
+
+# ─────────────────────────────────────────────
+# STAGE : Trivy Security Scan
+# ─────────────────────────────────────────────
+- stage: Trivy
+  displayName: 'Trivy Security Scan'
+  condition: eq('${{ parameters.environment }}', 'dev')
+  dependsOn: DockerBuild
+  variables:
+    IMAGE_TAG: $[stageDependencies.DockerBuild.DockerBuildJob.outputs['setVars.IMAGE_TAG']]
+    IMAGE: crformation.azurecr.io/devops-formation-payment:$(IMAGE_TAG)
+  jobs:
+  - job: TrivyJob
+    displayName: 'Trivy Scan'
+    steps:
+
+    - task: DownloadBuildArtifacts@1
+      displayName: 'Download OCI image'
+      inputs:
+        artifactName: 'docker-image'
+        downloadPath: '$(Build.ArtifactStagingDirectory)'
+
+    - script: |
+        mkdir -p $(Build.ArtifactStagingDirectory)/oci-image
+        tar -xf $(Build.ArtifactStagingDirectory)/docker-image/image-oci.tar \
+          -C $(Build.ArtifactStagingDirectory)/oci-image
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+          | sh -s -- -b /usr/local/bin
+        trivy image \
+          --input $(Build.ArtifactStagingDirectory)/oci-image \
+          --severity HIGH,CRITICAL \
+          --no-progress \
+          --format json \
+          --output $(Build.ArtifactStagingDirectory)/trivy-report.json
+        trivy image \
+          --input $(Build.ArtifactStagingDirectory)/oci-image \
+          --exit-code 1 \
+          --severity HIGH,CRITICAL \
+          --no-progress \
+          --format table
+      displayName: 'Trivy - Scan (fail on HIGH/CRITICAL)'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Artifact - trivy-report.json'
+      condition: always()
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)/trivy-report.json'
+        ArtifactName: 'trivy-report'
+
+# ─────────────────────────────────────────────
+# STAGE : Push → ACR
+# ─────────────────────────────────────────────
+- stage: PushACR
+  displayName: 'Push to ACR'
+  condition: eq('${{ parameters.environment }}', 'dev')
+  dependsOn:
+  - Trivy
+  - DockerBuild
+  variables:
+    IMAGE_TAG: $[stageDependencies.DockerBuild.DockerBuildJob.outputs['setVars.IMAGE_TAG']]
+    IMAGE: crformation.azurecr.io/devops-formation-payment:$(IMAGE_TAG)
+  jobs:
+  - job: PushJob
+    displayName: 'Push Docker Image'
+    steps:
+
+    - task: DownloadBuildArtifacts@1
+      displayName: 'Download OCI image'
+      inputs:
+        artifactName: 'docker-image'
+        downloadPath: '$(Build.ArtifactStagingDirectory)'
+
+    - task: AzureCLI@2
+      displayName: 'Push OCI image → ACR'
+      inputs:
+        azureSubscription: 'sc-formation-devops-acr'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          az acr login --name crformation
+          skopeo copy \
+            oci-archive:$(Build.ArtifactStagingDirectory)/docker-image/image-oci.tar \
+            docker://$(IMAGE)
+
+# ─────────────────────────────────────────────
+# STAGE : Helm Push → ACR
+# ─────────────────────────────────────────────
+- stage: HelmPush
+  displayName: 'Push Helm Chart'
+  condition: eq('${{ parameters.environment }}', 'dev')
+  dependsOn:
+  - PushACR
+  - DockerBuild
+  variables:
+    IMAGE_TAG: $[stageDependencies.DockerBuild.DockerBuildJob.outputs['setVars.IMAGE_TAG']]
+  jobs:
+  - job: HelmPushJob
+    displayName: 'Package & Push Helm Chart'
+    steps:
+    - checkout: self
+
+    - task: AzureCLI@2
+      displayName: 'Helm Package & Push → ACR'
       inputs:
         azureSubscription: 'sc-formation-devops-acr'
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
           set -e
+          az acr login --name crformation
+
+          # Injecter la version du chart (unique par build)
+          CHART_VERSION="1.0.$(Build.BuildId)"
+          sed -i "s/^version:.*/version: ${CHART_VERSION}/" ./helm/payment/Chart.yaml
+
+          # Injecter le tag image dans appVersion du Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"$(IMAGE_TAG)\"/" ./helm/payment/Chart.yaml
+
+          # Injecter le tag image dans values.yaml
+          sed -i "s/^  tag:.*/  tag: \"$(IMAGE_TAG)\"/" ./helm/payment/values.yaml
+
+          echo "Chart version : ${CHART_VERSION}"
+          echo "appVersion mis à jour : $(IMAGE_TAG)"
+          cat ./helm/payment/Chart.yaml
+          echo "--- values.yaml image section ---"
+          grep -A2 'image:' ./helm/payment/values.yaml
+
+          helm package ./helm/payment
+          helm push payment-*.tgz oci://crformation.azurecr.io/helm
+
+# =============================================================
+#  QUALIF/PROD FLOW : Validate → Deploy
+#  Conditionné à environment != 'dev'
+# =============================================================
+
+# ─────────────────────────────────────────────
+# STAGE : Verify Chart (qualif/prod uniquement)
+# ─────────────────────────────────────────────
+- stage: Validate
+  displayName: 'Validate Chart → ACR'
+  condition: ne('${{ parameters.environment }}', 'dev')
+  jobs:
+  - job: ValidateJob
+    steps:
+    - task: AzureCLI@2
+      displayName: 'Vérifier existence chart $(CHART_NAME):${{ parameters.chartVersion }}'
+      inputs:
+        azureSubscription: 'sc-formation-devops-acr'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -e
+
+          CHART_VERSION="${{ parameters.chartVersion }}"
+          CHART_VERSION=$(echo "$CHART_VERSION" | xargs)
+
+          if [ -z "$CHART_VERSION" ]; then
+            echo "##[error] Le paramètre chartVersion est requis pour qualif/prod."
+            exit 1
+          fi
+
           az acr login --name $(ACR_NAME)
 
           TAGS=$(az acr repository show-tags \
             --name $(ACR_NAME) \
-            --repository helm/${{ parameters.chartName }} \
+            --repository helm/$(CHART_NAME) \
             --output tsv)
 
-          if echo "$TAGS" | grep -qx "${{ parameters.chartVersion }}"; then
-            echo "Chart ${{ parameters.chartName }}:${{ parameters.chartVersion }} trouvé dans l'ACR ✅"
+          if echo "$TAGS" | grep -qx "$CHART_VERSION"; then
+            echo "Chart $(CHART_NAME):${CHART_VERSION} trouvé dans l'ACR ✅"
           else
-            echo "##[error] Chart ${{ parameters.chartName }}:${{ parameters.chartVersion }} introuvable dans l'ACR."
+            echo "##[error] Chart $(CHART_NAME):${CHART_VERSION} introuvable dans l'ACR."
             echo "Tags disponibles :"
             echo "$TAGS"
             exit 1
           fi
 
 # ─────────────────────────────────────────────
-# STAGE 2 : Deploy → environnement choisi
+# STAGE : Deploy
 # ─────────────────────────────────────────────
-- stage: Deploy_${{ parameters.environment }}
-  displayName: 'Deploy → ${{ parameters.environment }} (chart ${{ parameters.chartVersion }})'
-  dependsOn: VerifyChart
+- stage: Deploy
+  displayName: 'Deploy → ${{ parameters.environment }}'
+  dependsOn:
+  - HelmPush
+  - Validate
+  condition: >-
+    and(
+      not(canceled()),
+      or(
+        succeeded('HelmPush'),
+        eq(dependencies.HelmPush.result, 'Skipped')
+      ),
+      or(
+        succeeded('Validate'),
+        eq(dependencies.Validate.result, 'Skipped')
+      )
+    )
   jobs:
   - deployment: DeployHelm
-    displayName: 'Helm Upgrade / Install'
+    displayName: 'Helm Upgrade / Install → ${{ parameters.environment }}'
     environment: ${{ parameters.environment }}
+    variables:
+      ${{ if eq(parameters.environment, 'dev') }}:
+        DEPLOY_CHART_VERSION: '1.0.$(Build.BuildId)'
+      ${{ else }}:
+        DEPLOY_CHART_VERSION: '${{ parameters.chartVersion }}'
     strategy:
       runOnce:
         deploy:
@@ -118,15 +366,15 @@ stages:
                 sudo chmod +x /usr/local/bin/yq
 
                 # Extraire le chart OCI pour accéder aux values + appVersion
-                helm pull "$(HELM_OCI_REPO)/${{ parameters.chartName }}" \
-                  --version "${{ parameters.chartVersion }}" \
+                helm pull "$(HELM_OCI_REPO)/$(CHART_NAME)" \
+                  --version "$(DEPLOY_CHART_VERSION)" \
                   --untar \
                   --untardir /tmp/helm-chart
 
-                # Lire le tag image depuis appVersion (baked lors de la CI)
-                IMAGE_TAG=$(yq e '.appVersion' /tmp/helm-chart/${{ parameters.chartName }}/Chart.yaml)
+                # Lire le tag image depuis appVersion (baked lors du build)
+                IMAGE_TAG=$(yq e '.appVersion' /tmp/helm-chart/$(CHART_NAME)/Chart.yaml)
 
-                echo "Chart     : ${{ parameters.chartName }} ${{ parameters.chartVersion }}"
+                echo "Chart     : $(CHART_NAME) $(DEPLOY_CHART_VERSION)"
                 echo "Image tag : ${IMAGE_TAG}"
                 echo "Env       : ${{ parameters.environment }}"
 
@@ -136,11 +384,11 @@ stages:
                   --name $(AKS_CLUSTER_NAME) \
                   --overwrite-existing
 
-                helm upgrade --install "${{ parameters.chartName }}" \
-                  "$(HELM_OCI_REPO)/${{ parameters.chartName }}" \
-                  --version "${{ parameters.chartVersion }}" \
-                  -f /tmp/helm-chart/${{ parameters.chartName }}/values.yaml \
-                  -f /tmp/helm-chart/${{ parameters.chartName }}/values-${{ parameters.environment }}.yaml \
+                helm upgrade --install "$(CHART_NAME)" \
+                  "$(HELM_OCI_REPO)/$(CHART_NAME)" \
+                  --version "$(DEPLOY_CHART_VERSION)" \
+                  -f /tmp/helm-chart/$(CHART_NAME)/values.yaml \
+                  -f /tmp/helm-chart/$(CHART_NAME)/values-${{ parameters.environment }}.yaml \
                   --set image.repository=$(IMAGE_REPO) \
                   --set image.tag="${IMAGE_TAG}" \
                   --namespace ${{ parameters.environment }} \
