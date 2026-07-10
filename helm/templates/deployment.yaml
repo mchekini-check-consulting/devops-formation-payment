@@ -60,8 +60,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ .Chart.Name }}-config
+            {{- if .Values.secret.enabled }}
             - secretRef:
                 name: {{ .Chart.Name }}-secret
+            {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           startupProbe:

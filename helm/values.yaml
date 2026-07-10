@@ -1,5 +1,3 @@
-namespace: dev
-
 image:
   repository: crformation.azurecr.io/devops-formation-payment
   tag: "2.0"
@@ -42,15 +40,17 @@ resources:
 
 configmap:
   SPRING_PROFILES_ACTIVE: "prod"
-  SPRING_DATASOURCE_URL: "jdbc:postgresql://pgcat.dev.svc.cluster.local:5432/payment?sslmode=disable"
+  SPRING_DATASOURCE_URL: ""
   LOG_LEVEL: "WARN"
   OTEL_TRACES_SAMPLER: "parentbased_traceidratio"
   OTEL_TRACES_SAMPLER_ARG: "0.3"
 
 secret:
-  SPRING_DATASOURCE_USERNAME: formation
-  SPRING_DATASOURCE_PASSWORD: test
-  APPLICATIONINSIGHTS_CONNECTION_STRING: "InstrumentationKey=1311ad53-6ac0-4946-bb2f-48c60120bbd9;IngestionEndpoint=https://francecentral-1.in.applicationinsights.azure.com/;LiveEndpoint=https://francecentral.livediagnostics.monitor.azure.com/;ApplicationId=d9efc03e-0523-42cc-9e0e-1ea237ed1ba4"
+  enabled: false
+  data: {}
+
+initContainer:
+  env: []
 
 pdb:
   minAvailable: 1
