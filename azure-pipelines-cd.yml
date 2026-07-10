@@ -233,15 +233,9 @@ stages:
           https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64
         sudo chmod +x /usr/local/bin/yq
 
-        # Extraire l'organisation depuis System.CollectionUri
-        ORG_URL=$(echo "$(System.CollectionUri)" | sed 's|/$||')
-
-        # Cloner le repo gitops
-        git clone "${ORG_URL}/$(System.TeamProject)/_git/$(GITOPS_REPO)" /tmp/gitops
+        # Cloner le repo gitops (GitHub)
+        git clone https://$(GITOPS_PAT)@github.com/juba-touam/$(GITOPS_REPO).git /tmp/gitops
         cd /tmp/gitops
-
-        # Configurer le credential helper pour utiliser le PAT
-        git remote set-url origin "https://$(GITOPS_PAT)@$(echo ${ORG_URL} | sed 's|https://||')/$(System.TeamProject)/_git/$(GITOPS_REPO)"
 
         # Mettre à jour le tag image
         VALUES_FILE="environments/dev/40-applications/$(APP_NAME)/values.yaml"
@@ -249,10 +243,10 @@ stages:
         yq e -i ".image.tag = \"$(IMAGE_TAG)\"" "${VALUES_FILE}"
 
         # Commit & push
-        git config user.email "azure-pipelines@dev.azure.com"
+        git config user.email "azure-pipelines[bot]@users.noreply.github.com"
         git config user.name "Azure Pipelines"
         git add "${VALUES_FILE}"
-        git commit -m "chore(dev): update $(APP_NAME) image tag to $(IMAGE_TAG)"
+        git commit -m "chore($(APP_NAME)): update dev image tag to $(IMAGE_TAG)"
         git push origin main
       displayName: 'Clone gitops + yq update + push'
 
@@ -294,15 +288,9 @@ stages:
                 https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_amd64
               sudo chmod +x /usr/local/bin/yq
 
-              # Extraire l'organisation depuis System.CollectionUri
-              ORG_URL=$(echo "$(System.CollectionUri)" | sed 's|/$||')
-
-              # Cloner le repo gitops
-              git clone "${ORG_URL}/$(System.TeamProject)/_git/$(GITOPS_REPO)" /tmp/gitops
+              # Cloner le repo gitops (GitHub)
+              git clone https://$(GITOPS_PAT)@github.com/juba-touam/$(GITOPS_REPO).git /tmp/gitops
               cd /tmp/gitops
-
-              # Configurer le credential helper pour utiliser le PAT
-              git remote set-url origin "https://$(GITOPS_PAT)@$(echo ${ORG_URL} | sed 's|https://||')/$(System.TeamProject)/_git/$(GITOPS_REPO)"
 
               # Mettre à jour le tag image
               VALUES_FILE="environments/${{ parameters.environment }}/40-applications/$(APP_NAME)/values.yaml"
@@ -310,9 +298,9 @@ stages:
               yq e -i ".image.tag = \"${IMAGE_TAG}\"" "${VALUES_FILE}"
 
               # Commit & push
-              git config user.email "azure-pipelines@dev.azure.com"
+              git config user.email "azure-pipelines[bot]@users.noreply.github.com"
               git config user.name "Azure Pipelines"
               git add "${VALUES_FILE}"
-              git commit -m "chore(${{ parameters.environment }}): promote $(APP_NAME) image tag to ${IMAGE_TAG}"
+              git commit -m "chore($(APP_NAME)): promote ${{ parameters.environment }} image tag to ${IMAGE_TAG}"
               git push origin main
             displayName: 'Clone gitops + yq update + push'
