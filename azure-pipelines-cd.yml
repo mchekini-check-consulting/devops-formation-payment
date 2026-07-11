@@ -302,5 +302,5 @@ stages:
               git config user.name "Azure Pipelines"
               git add "${VALUES_FILE}"
               git commit -m "chore($(APP_NAME)): promote ${{ parameters.environment }} image tag to ${IMAGE_TAG}"
-              git push origin main
+              git push
             displayName: 'Clone gitops + yq update + push'
