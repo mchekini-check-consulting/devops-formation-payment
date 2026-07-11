@@ -234,7 +234,7 @@ stages:
         sudo chmod +x /usr/local/bin/yq
 
         # Cloner le repo gitops (GitHub)
-        git clone https://$(GITOPS_PAT)@github.com/juba-touam/$(GITOPS_REPO).git /tmp/gitops
+        git clone https://$(GITOPS_PAT)@github.com/mchekini-check-consulting/$(GITOPS_REPO).git /tmp/gitops
         cd /tmp/gitops
 
         # Mettre à jour le tag image
@@ -247,7 +247,7 @@ stages:
         git config user.name "Azure Pipelines"
         git add "${VALUES_FILE}"
         git commit -m "chore($(APP_NAME)): update dev image tag to $(IMAGE_TAG)"
-        git push origin main
+        git push origin feat/postgres
       displayName: 'Clone gitops + yq update + push'
 
 # =============================================================
@@ -289,7 +289,7 @@ stages:
               sudo chmod +x /usr/local/bin/yq
 
               # Cloner le repo gitops (GitHub)
-              git clone https://$(GITOPS_PAT)@github.com/juba-touam/$(GITOPS_REPO).git /tmp/gitops
+              git clone https://$(GITOPS_PAT)@github.com/mchekini-check-consulting/$(GITOPS_REPO).git /tmp/gitops
               cd /tmp/gitops
 
               # Mettre à jour le tag image
