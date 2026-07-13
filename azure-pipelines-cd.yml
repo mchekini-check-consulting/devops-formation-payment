@@ -247,7 +247,7 @@ stages:
         git config user.name "Azure Pipelines"
         git add "${VALUES_FILE}"
         git commit -m "chore($(APP_NAME)): update dev image tag to $(IMAGE_TAG)"
-        git push origin feat/postgres
+        git push
       displayName: 'Clone gitops + yq update + push'
 
 # =============================================================
