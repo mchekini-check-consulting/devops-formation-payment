@@ -85,6 +85,11 @@ ingress:
         name: payment
         port: 8082
 
+externalSecret:
+  enabled: false
+  refreshInterval: "1m"
+  vaultPath: ""
+
 netpolicies:
   ingresssources: ingress-nginx
   ingressdestports: 8082
