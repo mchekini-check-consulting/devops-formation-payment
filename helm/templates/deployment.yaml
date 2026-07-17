@@ -19,6 +19,8 @@ spec:
     metadata:
       labels:
         {{- include "payment.selectorLabels" . | nindent 8 }}
+      annotations:
+        reloader.stakater.com/auto: "true"
     spec:
       affinity:
         podAntiAffinity:
