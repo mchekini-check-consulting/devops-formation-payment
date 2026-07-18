@@ -15,6 +15,11 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: {{ .Values.netpolicies.ingresssources }}
+        {{- range .Values.netpolicies.extraIngressNamespaces }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+        {{- end }}
       ports:
         - port: {{ .Values.netpolicies.ingressdestports }}
           protocol: {{ .Values.netpolicies.ingressprotocol }}
