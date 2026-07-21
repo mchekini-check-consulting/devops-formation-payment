@@ -6,8 +6,9 @@ import com.ecommerce.paymentservice.model.Payment;
 import com.ecommerce.paymentservice.model.PaymentStatus;
 import com.ecommerce.paymentservice.repository.PaymentRepository;
 import com.ecommerce.paymentservice.exception.PaymentAlreadyProcessedException;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.dao.DataIntegrityViolationException;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,12 +19,23 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class PaymentService {
-    
+
     private final PaymentRepository paymentRepository;
     private final Random random = new Random();
+    private final Counter paymentsSuccessCounter;
+    private final Counter paymentsFailedCounter;
+
+    public PaymentService(PaymentRepository paymentRepository, MeterRegistry registry) {
+        this.paymentRepository = paymentRepository;
+        this.paymentsSuccessCounter = Counter.builder("payments_success_total")
+                .description("Total number of successful payments")
+                .register(registry);
+        this.paymentsFailedCounter = Counter.builder("payments_failed_total")
+                .description("Total number of failed payments")
+                .register(registry);
+    }
     
     @Transactional
     public PaymentResponse processPayment(PaymentRequest request) {
@@ -45,6 +57,12 @@ public class PaymentService {
         // Simulation du paiement (80% de succès)
         boolean isSuccess = random.nextDouble() < 0.8;
         PaymentStatus status = isSuccess ? PaymentStatus.SUCCESS : PaymentStatus.FAILED;
+
+        if (isSuccess) {
+            paymentsSuccessCounter.increment();
+        } else {
+            paymentsFailedCounter.increment();
+        }
         
         Payment payment = Payment.builder()
                 .orderId(request.getOrderId())
