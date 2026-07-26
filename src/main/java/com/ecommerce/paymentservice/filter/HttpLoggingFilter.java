@@ -20,7 +20,7 @@ import java.io.IOException;
 @Order(Ordered.HIGHEST_PRECEDENCE + 2)
 public class HttpLoggingFilter implements Filter {
 
-    private static final Logger logger = LoggerFactory.getLogger(HttpLoggingFilter.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(HttpLoggingFilter.class);
 
     @Override
     public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain)
@@ -41,7 +41,7 @@ public class HttpLoggingFilter implements Filter {
         MDC.put("httpMethod", request.getMethod());
         MDC.put("httpPath", path);
 
-        logger.info("Incoming request");
+        LOGGER.info("Incoming request");
 
         try {
             chain.doFilter(req, res);
@@ -51,7 +51,7 @@ public class HttpLoggingFilter implements Filter {
             MDC.put("httpStatusCode", String.valueOf(response.getStatus()));
             MDC.put("duration", duration + "ms");
 
-            logger.info("Request completed");
+            LOGGER.info("Request completed");
 
             MDC.remove("httpMethod");
             MDC.remove("httpPath");
