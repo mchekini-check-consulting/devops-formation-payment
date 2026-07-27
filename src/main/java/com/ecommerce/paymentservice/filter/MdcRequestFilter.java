@@ -33,8 +33,13 @@ public class MdcRequestFilter implements Filter {
                 .ofNullable(http.getHeader("X-User-Id"))
                 .orElse("anonymous");
 
+            String traceId = UUID.randomUUID().toString().replace("-", "");
+            String spanId = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+
             MDC.put("correlationId", correlationId);
             MDC.put("userId", userId);
+            MDC.put("traceId", traceId);
+            MDC.put("spanId", spanId);
 
             chain.doFilter(req, res);
 
