@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.2</version>
+        <version>3.5.14</version>
         <relativePath/>
     </parent>
 
@@ -19,8 +19,9 @@
         <tomcat.version>10.1.55</tomcat.version>
         <netty.version>4.1.136.Final</netty.version>
         <postgresql.version>42.7.13</postgresql.version>
-        <spring-framework.version>6.2.11</spring-framework.version>
+        <spring-framework.version>6.2.19</spring-framework.version>
         <jackson-bom.version>2.21.4</jackson-bom.version>
+        <micrometer.version>1.15.12</micrometer.version>
     </properties>
 
     <dependencyManagement>
@@ -39,6 +40,12 @@
                 <version>2.11.0-alpha</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <!-- CVE-2026-41695 / CVE-2026-41716 — spring-data-bom géré par le parent n'a pas encore le correctif -->
+            <dependency>
+                <groupId>org.springframework.data</groupId>
+                <artifactId>spring-data-commons</artifactId>
+                <version>3.5.12</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
