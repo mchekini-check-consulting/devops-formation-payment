@@ -1,5 +1,5 @@
 image:
-  repository: crformation.azurecr.io/devops-formation-payment
+  repository: docker.io/jubatouam/payment
   tag: "2.0"
   pullPolicy: Always
 
@@ -75,9 +75,8 @@ hpa:
 ingress:
   enabled: true
   name: ecommerce-ingress
-  className: nginx
-  annotations:
-    nginx.ingress.kubernetes.io/use-regex: "true"
+  className: kong
+  annotations: {}
   routes:
     - path: /api/payments
       pathType: Prefix
@@ -91,7 +90,7 @@ externalSecret:
   vaultPath: ""
 
 netpolicies:
-  ingresssources: ingress-nginx
+  ingresssources: kong
   ingressdestports: 8082
   ingressprotocol: TCP
   egresssources: pgcat
@@ -101,4 +100,5 @@ netpolicies:
   httpsprotocol: TCP
 
 vpa:
+  enabled: false
   updateMode: "Off"

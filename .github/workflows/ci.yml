@@ -1,0 +1,267 @@
+name: CI Pipeline
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Job 1 : Lint (Checkstyle)
+  # ──────────────────────────────────────────────
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Maven - checkstyle:check
+        run: mvn -B checkstyle:check -DskipTests
+
+      - name: Upload checkstyle report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: checkstyle-report
+          path: target/checkstyle-result.xml
+          retention-days: 7
+
+  # ──────────────────────────────────────────────
+  # Job 2 : Secrets scanning (Gitleaks)
+  # ──────────────────────────────────────────────
+  gitleaks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: lint
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  # ──────────────────────────────────────────────
+  # Job 3 : OWASP Dependency Check
+  # ──────────────────────────────────────────────
+  owasp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: lint
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Maven - dependency-check:check
+        run: mvn -B verify -DskipTests -Ddependency-check.skip=false -Dformat=HTML
+
+      - name: Upload OWASP report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owasp-dependency-check-report
+          path: target/
+          retention-days: 7
+
+  # ──────────────────────────────────────────────
+  # Job 4 : Tests unitaires
+  # ──────────────────────────────────────────────
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [gitleaks, owasp]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Maven - surefire (*Test.java)
+        run: mvn -B test
+
+      - name: Upload unit test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-reports
+          path: target/surefire-reports
+          retention-days: 7
+
+      - name: Upload jacoco unit exec
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacoco-unit-exec
+          path: target/jacoco-all.exec
+          retention-days: 7
+
+  # ──────────────────────────────────────────────
+  # Job 5 : Tests intégration
+  # ──────────────────────────────────────────────
+  integration-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [gitleaks, owasp]
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: payment_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Maven - failsafe (*IT.java)
+        run: mvn -B verify
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/payment_db
+          SPRING_DATASOURCE_USERNAME: postgres
+          SPRING_DATASOURCE_PASSWORD: postgres
+
+      - name: Upload integration test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-reports
+          path: target/failsafe-reports
+          retention-days: 7
+
+      - name: Upload jacoco coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacoco-coverage-report
+          path: target/site/jacoco
+          retention-days: 7
+
+  # ──────────────────────────────────────────────
+  # Job 6 : SonarQube analysis
+  # ──────────────────────────────────────────────
+  sonar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: integration-tests
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Download jacoco coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: jacoco-coverage-report
+          path: target/site/jacoco
+
+      - name: Maven - compile + sonar:sonar
+        run: |
+          mvn -B compile sonar:sonar \
+            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
+            -Dsonar.token=${{ secrets.SONAR_TOKEN }} \
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+
+  # ──────────────────────────────────────────────
+  # Job 7 : Build JAR
+  # ──────────────────────────────────────────────
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: sonar
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Maven - package -DskipTests
+        run: mvn -B package -DskipTests
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jar
+          path: target/*.jar
+          retention-days: 7
+
+  # ──────────────────────────────────────────────
+  # Job 8 : Mutation testing (PIT)
+  # ──────────────────────────────────────────────
+  mutation-testing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Maven - pitest mutationCoverage
+        run: mvn -B test-compile org.pitest:pitest-maven:mutationCoverage -Djacoco.skip=true
+
+      - name: Upload PIT report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pit-mutation-report
+          path: target/pit-reports
+          retention-days: 7
