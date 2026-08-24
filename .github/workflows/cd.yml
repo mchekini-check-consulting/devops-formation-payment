@@ -1,0 +1,187 @@
+name: CD Pipeline
+
+on:
+  push:
+    branches: [main]
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environnement cible"
+        type: choice
+        options:
+          - qualif
+          - prod
+      image_tag:
+        description: "Tag image existant sur Docker Hub à promouvoir"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Job 1 : Build Docker image (OCI format, push only)
+  # ──────────────────────────────────────────────
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup QEMU (emulation for arm64 build)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Setup buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (OCI format)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          tags: payment:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          outputs: type=oci,dest=payment-image.tar
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: payment-image.tar
+          retention-days: 1
+
+  # ──────────────────────────────────────────────
+  # Job 2 : Image scan (Trivy) (push only)
+  # ──────────────────────────────────────────────
+  image-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: build
+    if: github.event_name == 'push'
+    steps:
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+
+      - name: Extract OCI image
+        run: mkdir -p payment-image && tar -xf payment-image.tar -C payment-image
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          input: payment-image
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: 1
+          format: table
+          output: trivy-vuln-report.txt
+
+      - name: Upload Trivy report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-report
+          path: trivy-vuln-report.txt
+          retention-days: 7
+
+  # ──────────────────────────────────────────────
+  # Job 3 : Push image to Docker Hub (push only)
+  # ──────────────────────────────────────────────
+  push-dockerhub:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: image-scan
+    if: github.event_name == 'push'
+    outputs:
+      image-tag: ${{ steps.vars.outputs.tag }}
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+
+      - name: Set image tag
+        id: vars
+        run: |
+          SHORT_SHA=${GITHUB_SHA::7}
+          BRANCH=$(echo "${GITHUB_REF_NAME}" | sed 's/[^a-zA-Z0-9._-]/-/g')
+          TIMESTAMP=$(date +%Y%m%d%H%M%S)
+          echo "tag=${SHORT_SHA}-${BRANCH}-${TIMESTAMP}" >> "$GITHUB_OUTPUT"
+
+      - name: Push image to Docker Hub
+        uses: pr-mpt/actions-push-oci-archive-to-registry@v1
+        with:
+          archive: payment-image.tar
+          image: ${{ secrets.DOCKERHUB_USERNAME }}/payment
+          tag: ${{ steps.vars.outputs.tag }}
+
+  # ──────────────────────────────────────────────
+  # Job 4 : Update GitOps repo for dev (push only)
+  # ──────────────────────────────────────────────
+  update-gitops-dev:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: push-dockerhub
+    if: github.event_name == 'push'
+    steps:
+      - name: Clone GitOps repo
+        run: |
+          git clone https://x-access-token:${{ secrets.GITOPS_PAT }}@github.com/mchekini-check-consulting/devops-formation-gitops.git
+          cd devops-formation-gitops
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Update image tag for dev
+        run: |
+          cd devops-formation-gitops
+          yq e '.image.tag = "${{ needs.push-dockerhub.outputs.image-tag }}"' -i environments/dev/40-applications/payment/values.yaml
+          cat environments/dev/40-applications/payment/values.yaml
+
+      - name: Commit and push
+        run: |
+          cd devops-formation-gitops
+          git add .
+          git commit -m "chore(payment): update dev image tag to ${{ needs.push-dockerhub.outputs.image-tag }}"
+          git push
+
+  # ──────────────────────────────────────────────
+  # Job 5 : Update GitOps repo for promote (workflow_dispatch)
+  # ──────────────────────────────────────────────
+  update-gitops-promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Clone GitOps repo
+        run: |
+          git clone https://x-access-token:${{ secrets.GITOPS_PAT }}@github.com/mchekini-check-consulting/devops-formation-gitops.git
+          cd devops-formation-gitops
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Update image tag for ${{ inputs.environment }}
+        run: |
+          cd devops-formation-gitops
+          yq e '.image.tag = "${{ inputs.image_tag }}"' -i environments/${{ inputs.environment }}/40-applications/payment/values.yaml
+          cat environments/${{ inputs.environment }}/40-applications/payment/values.yaml
+
+      - name: Commit and push
+        run: |
+          cd devops-formation-gitops
+          git add .
+          git commit -m "chore(${{ inputs.environment }}): update payment image tag to ${{ inputs.image_tag }}"
+          git push
